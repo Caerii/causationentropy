@@ -1,3 +1,8 @@
+"""
+Author: Kevin Slote
+Email: kslote@clarkson.edu
+version = 1.1.0
+"""
 import copy
 from typing import Dict, Tuple, Union
 
