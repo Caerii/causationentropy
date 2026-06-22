@@ -17,7 +17,9 @@ https://colab.research.google.com/github/Center-For-Complex-Systems-Science/caus
 
 ## Overview
 
-CausationEntropy implements state-of-the-art information-theoretic methods for causal discovery from multivariate time series. The library provides robust algorithms that can identify causal relationships.
+CausationEntropy implements state-of-the-art information-theoretic methods for causal discovery from multivariate time series. The library provides robust algorithms for identifying causal relationships. This library is dedicated to maintaining the intellectual legacy of the oCSE method developed by Erik Bollt.
+
+See our [SIAM News article](https://www.siam.org/publications/siam-news/articles/optimal-causation-entropy-for-the-next-generation/).
 
 ### What it does
 
