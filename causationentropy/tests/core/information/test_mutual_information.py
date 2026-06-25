@@ -303,14 +303,10 @@ class TestMutualInformationProperties:
         X = np.random.normal(0, 1, (n, 1))
         Y = np.random.normal(0, 1, (n, 1))
 
-        methods = [
-            (gaussian_mutual_information, {}),
-            (knn_mutual_information, {"k": 3}),
-        ]
-
-        for method, kwargs in methods:
-            mi = method(X, Y, **kwargs)
-            assert mi >= -0.5  # Allow larger numerical errors for k-NN methods
+        mi_gauss = gaussian_mutual_information(X, Y)
+        mi_knn = knn_mutual_information(X, Y, k=3)
+        assert mi_gauss >= -0.5  # Allow larger numerical errors for k-NN methods
+        assert mi_knn >= -0.5
 
     def test_mi_identical_variables(self):
         """Test MI properties with identical variables."""

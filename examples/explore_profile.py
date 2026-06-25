@@ -65,11 +65,31 @@ class Result:
     error: str | None = None
 
 
-def timed(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[Any, float]:
+def elapsed_call(fn: Callable[[], Any]) -> tuple[Any, float]:
     """Call ``fn`` and return ``(result, elapsed_seconds)``."""
     t0 = time.perf_counter()
-    out = fn(*args, **kwargs)
+    out = fn()
     return out, time.perf_counter() - t0
+
+
+def _run_gaussian_standard_discovery(
+    data: np.ndarray,
+    *,
+    seed: int,
+    max_lag: int = 1,
+    n_shuffles: int = 50,
+    show_progress: bool = False,
+) -> nx.MultiDiGraph:
+    """Gaussian standard oCSE with explicit parameters (no dict unpacking)."""
+    return discover_network(
+        data,
+        method="standard",
+        information="gaussian",
+        max_lag=max_lag,
+        n_shuffles=n_shuffles,
+        seed=seed,
+        show_progress=show_progress,
+    )
 
 
 def run_integration_suite(
@@ -124,17 +144,17 @@ def run_reproduction_suite(seed: int = 42, p: float = 0.2) -> list[Result]:
     results: list[Result] = []
 
     configs = [
-        ("standard+gaussian", {"method": "standard", "information": "gaussian"}),
-        ("alternative+gaussian", {"method": "alternative", "information": "gaussian"}),
-        ("standard+knn", {"method": "standard", "information": "knn"}),
-        ("standard+geometric_knn", {"method": "standard", "information": "geometric_knn"}),
-        ("standard+kde", {"method": "standard", "information": "kde"}),
-        ("standard+poisson", {"method": "standard", "information": "poisson"}),
-        ("lasso", {"method": "lasso", "information": "gaussian"}),
-        ("information_lasso", {"method": "information_lasso", "information": "gaussian"}),
+        ("standard+gaussian", "standard", "gaussian"),
+        ("alternative+gaussian", "alternative", "gaussian"),
+        ("standard+knn", "standard", "knn"),
+        ("standard+geometric_knn", "standard", "geometric_knn"),
+        ("standard+kde", "standard", "kde"),
+        ("standard+poisson", "standard", "poisson"),
+        ("lasso", "lasso", "gaussian"),
+        ("information_lasso", "information_lasso", "gaussian"),
     ]
 
-    for label, kwargs in configs:
+    for label, method, information in configs:
         if "poisson" in label:
             continue
         try:
@@ -142,16 +162,18 @@ def run_reproduction_suite(seed: int = 42, p: float = 0.2) -> list[Result]:
             data, _ = linear_stochastic_gaussian_process(
                 rho=0.7, n=5, T=200, seed=seed, G=G_true
             )
-            G, elapsed = timed(
-                discover_network,
-                data,
-                max_lag=1,
-                n_shuffles=200,
-                alpha_forward=0.05,
-                alpha_backward=0.05,
-                seed=seed,
-                show_progress=False,
-                **kwargs,
+            G, elapsed = elapsed_call(
+                lambda data=data, method=method, information=information: discover_network(
+                    data,
+                    method=method,
+                    information=information,
+                    max_lag=1,
+                    n_shuffles=200,
+                    alpha_forward=0.05,
+                    alpha_backward=0.05,
+                    seed=seed,
+                    show_progress=False,
+                )
             )
             tpr, fpr = evaluate_network_recovery(G_true, G)
             results.append(
@@ -176,15 +198,16 @@ def run_reproduction_suite(seed: int = 42, p: float = 0.2) -> list[Result]:
         G_true = nx.erdos_renyi_graph(5, p, seed=seed, directed=True)
         data, _ = poisson_coupled_oscillators(n=5, T=200, seed=seed, G=G_true)
         for method in ("standard", "alternative"):
-            G, elapsed = timed(
-                discover_network,
-                data,
-                method=method,
-                information="poisson",
-                max_lag=1,
-                n_shuffles=200,
-                seed=seed,
-                show_progress=False,
+            G, elapsed = elapsed_call(
+                lambda data=data, method=method: discover_network(
+                    data,
+                    method=method,
+                    information="poisson",
+                    max_lag=1,
+                    n_shuffles=200,
+                    seed=seed,
+                    show_progress=False,
+                )
             )
             tpr, fpr = evaluate_network_recovery(G_true, G)
             results.append(
@@ -201,12 +224,13 @@ def run_reproduction_suite(seed: int = 42, p: float = 0.2) -> list[Result]:
     try:
         data, A = logisic_dynamics(n=5, t=200, seed=seed)
         G_true = nx.from_numpy_array(A, create_using=nx.DiGraph)
-        G, elapsed = timed(
-            discover_network,
-            data,
-            preset="logistic_chaos",
-            seed=seed,
-            show_progress=False,
+        G, elapsed = elapsed_call(
+            lambda: discover_network(
+                data,
+                preset="logistic_chaos",
+                seed=seed,
+                show_progress=False,
+            )
         )
         tpr, fpr = evaluate_network_recovery(G_true, G)
         results.append(
@@ -228,14 +252,6 @@ def run_reproduction_suite(seed: int = 42, p: float = 0.2) -> list[Result]:
 def run_scaling_suite(seed: int = 42) -> list[Result]:
     """Scale ``n``, ``T``, ``max_lag``, and ``n_shuffles`` (Gaussian standard)."""
     results: list[Result] = []
-    base = dict(
-        method="standard",
-        information="gaussian",
-        n_shuffles=50,
-        max_lag=1,
-        seed=seed,
-        show_progress=False,
-    )
 
     for n in (3, 5, 8, 10):
         G = nx.erdos_renyi_graph(n, 0.3, seed=seed, directed=True)
@@ -243,7 +259,9 @@ def run_scaling_suite(seed: int = 42) -> list[Result]:
             rho=0.7, n=n, T=200, seed=seed, G=G
         )
         try:
-            _, elapsed = timed(discover_network, data, **base)
+            _, elapsed = elapsed_call(
+                lambda data=data: _run_gaussian_standard_discovery(data, seed=seed)
+            )
             results.append(Result(f"scale/n={n}", True, elapsed, {"n": n, "T": 200}))
         except Exception as exc:
             results.append(Result(f"scale/n={n}", False, 0.0, error=str(exc)))
@@ -253,7 +271,9 @@ def run_scaling_suite(seed: int = 42) -> list[Result]:
         data, _ = linear_stochastic_gaussian_process(
             rho=0.7, n=5, T=T, seed=seed, G=G
         )
-        _, elapsed = timed(discover_network, data, **base)
+        _, elapsed = elapsed_call(
+            lambda data=data: _run_gaussian_standard_discovery(data, seed=seed)
+        )
         results.append(Result(f"scale/T={T}", True, elapsed, {"T": T}))
 
     for max_lag in (1, 2, 3, 5):
@@ -261,7 +281,11 @@ def run_scaling_suite(seed: int = 42) -> list[Result]:
         data, _ = linear_stochastic_gaussian_process(
             rho=0.7, n=5, T=300, seed=seed, G=G
         )
-        _, elapsed = timed(discover_network, data, **{**base, "max_lag": max_lag})
+        _, elapsed = elapsed_call(
+            lambda data=data, max_lag=max_lag: _run_gaussian_standard_discovery(
+                data, seed=seed, max_lag=max_lag
+            )
+        )
         results.append(
             Result(f"scale/max_lag={max_lag}", True, elapsed, {"max_lag": max_lag})
         )
@@ -271,8 +295,10 @@ def run_scaling_suite(seed: int = 42) -> list[Result]:
         data, _ = linear_stochastic_gaussian_process(
             rho=0.7, n=5, T=200, seed=seed, G=G
         )
-        _, elapsed = timed(
-            discover_network, data, **{**base, "n_shuffles": n_shuffles}
+        _, elapsed = elapsed_call(
+            lambda data=data, n_shuffles=n_shuffles: _run_gaussian_standard_discovery(
+                data, seed=seed, n_shuffles=n_shuffles
+            )
         )
         results.append(
             Result(
@@ -307,13 +333,15 @@ def run_edge_cases(seed: int = 42) -> list[Result]:
     for name, data_fn, extra in cases:
         try:
             data = data_fn()
-            G, elapsed = timed(
-                discover_network,
-                data,
-                max_lag=extra.get("max_lag", 2),
-                n_shuffles=20,
-                seed=seed,
-                show_progress=False,
+            max_lag = int(extra.get("max_lag", 2))
+            G, elapsed = elapsed_call(
+                lambda data=data, max_lag=max_lag: discover_network(
+                    data,
+                    max_lag=max_lag,
+                    n_shuffles=20,
+                    seed=seed,
+                    show_progress=False,
+                )
             )
             results.append(
                 Result(
@@ -337,16 +365,19 @@ def run_edge_cases(seed: int = 42) -> list[Result]:
     data, _ = linear_stochastic_gaussian_process(
         rho=0.7, n=5, T=200, seed=seed, G=G
     )
-    G_lasso, _ = timed(
-        discover_network, data, method="lasso", max_lag=1, seed=seed, show_progress=False
+    G_lasso, _ = elapsed_call(
+        lambda: discover_network(
+            data, method="lasso", max_lag=1, seed=seed, show_progress=False
+        )
     )
-    G_info, _ = timed(
-        discover_network,
-        data,
-        method="information_lasso",
-        max_lag=1,
-        seed=seed,
-        show_progress=False,
+    G_info, _ = elapsed_call(
+        lambda: discover_network(
+            data,
+            method="information_lasso",
+            max_lag=1,
+            seed=seed,
+            show_progress=False,
+        )
     )
     results.append(
         Result(

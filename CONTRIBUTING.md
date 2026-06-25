@@ -97,6 +97,8 @@ The typical workflow for adding new methods:
 
 When adding new methods, always spell out every parameter explicitly in the function signature. Do not use variable-length argument patterns.
 
+The same rule applies at **call sites**: when invoking `discover_network` or other library entry points, pass each parameter by name explicitly. Do not build a parameter dict and unpack it with `**some_dict`. (Using `functools.partial` to bind fixed arguments for parallel workers—as in `shuffle_test`—is fine; that is not a public API signature.)
+
 ### Step 1: Information Theory Estimators
 
 All information-theoretic measures go in `causationentropy/core/information/`.

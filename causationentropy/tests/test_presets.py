@@ -52,7 +52,8 @@ def test_n_jobs_parallel_matches_serial():
     data, _ = linear_stochastic_gaussian_process(
         rho=0.7, n=4, T=120, seed=seed, G=G_true
     )
-    common = dict(
+    G_serial = discover_network(
+        data,
         method="standard",
         information="gaussian",
         max_lag=1,
@@ -61,9 +62,20 @@ def test_n_jobs_parallel_matches_serial():
         alpha_backward=0.05,
         show_progress=False,
         seed=seed,
+        n_jobs=1,
     )
-    G_serial = discover_network(data, n_jobs=1, **common)
-    G_parallel = discover_network(data, n_jobs=2, **common)
+    G_parallel = discover_network(
+        data,
+        method="standard",
+        information="gaussian",
+        max_lag=1,
+        n_shuffles=80,
+        alpha_forward=0.05,
+        alpha_backward=0.05,
+        show_progress=False,
+        seed=seed,
+        n_jobs=2,
+    )
     A = network_to_adjacency(G_serial)
     B = network_to_adjacency(G_parallel)
     np.testing.assert_array_equal(A, B)

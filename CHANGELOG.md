@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.8] - 2026-06-25
+
+### Changed
+
+- **CONTRIBUTING compliance** — removed ``*args``/``**kwargs`` signatures and dict
+  unpacking at ``discover_network`` call sites in ``integration_benchmarks``,
+  ``explore_profile``, and tests; clarified call-site rule in CONTRIBUTING.md.
+
 ## [1.2.7] - 2026-06-25
 
 ### Added
@@ -31,8 +39,9 @@ All notable changes to this project are documented in this file.
 - **`information_lasso`** — after MI-weighted LASSO screening, survivors are pruned with
   :func:`backward` permutation tests (``n_shuffles``, ``alpha_backward`` from
   :func:`discover_network` / presets). Set ``n_shuffles=0`` to skip pruning.
-- **`discover_network`** — passes significance and parallelism kwargs through to
-  ``information_lasso_optimal_causation_entropy``.
+- **`discover_network`** — forwards ``alpha_backward``, ``n_shuffles``, ``information``,
+  ``metric``, ``k_neighbors``, ``bandwidth``, and ``n_jobs`` explicitly to
+  ``information_lasso_optimal_causation_entropy`` (no ``**kwargs`` plumbing).
 
 ## [1.2.4] - 2026-06-25
 

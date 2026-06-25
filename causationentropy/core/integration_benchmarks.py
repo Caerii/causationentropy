@@ -379,15 +379,22 @@ def run_integration_benchmark(
     get_discovery_preset(preset)  # fail fast if preset name drifts from matrix
 
     data, G_true = make_integration_data(benchmark)
-    kwargs: Dict[str, Any] = dict(
-        preset=preset,
-        seed=benchmark["seed"],
-        show_progress=show_progress,
-    )
-    if n_jobs is not None:
-        kwargs["n_jobs"] = n_jobs
 
-    G_discovered = discover_network(data, **kwargs)
+    if n_jobs is not None:
+        G_discovered = discover_network(
+            data,
+            preset=preset,
+            seed=benchmark["seed"],
+            show_progress=show_progress,
+            n_jobs=n_jobs,
+        )
+    else:
+        G_discovered = discover_network(
+            data,
+            preset=preset,
+            seed=benchmark["seed"],
+            show_progress=show_progress,
+        )
 
     # Binarize adjacency for TPR/FPR (multi-edges across lags collapse to presence).
     A_bin = (nx.to_numpy_array(G_true) > 0).astype(int)
