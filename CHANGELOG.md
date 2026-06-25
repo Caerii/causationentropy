@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.7] - 2026-06-25
+
+### Added
+
+- **`examples/explore_profile.py`** — exploration harness with argparse for the
+  integration benchmark matrix, reproduction grids, scaling sweeps, edge cases,
+  and optional ``cProfile`` snapshots (``--list``, ``--matrix``, ``--quick``,
+  ``--all``).
+
 ## [1.2.6] - 2026-06-25
 
 ### Added
