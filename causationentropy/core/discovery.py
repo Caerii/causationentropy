@@ -7,6 +7,7 @@ version = 1.2.0
 import copy
 import os
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Dict, Optional, Tuple, Union
 
 import networkx as nx
@@ -1065,27 +1066,24 @@ def shuffle_test(
     rng = np.random.default_rng(rng)
     n_workers = _resolve_n_jobs(n_jobs)
     permutations = [rng.permutation(len(X)) for _ in range(n_shuffles)]
+    null_fn = partial(
+        _null_cmi_for_permutation,
+        X=X,
+        Y=Y,
+        Z=Z,
+        information=information,
+        metric=metric,
+        k_means=k_means,
+        bandwidth=bandwidth,
+    )
 
     if n_workers == 1:
-        null_cmi = np.array(
-            [
-                _null_cmi_for_permutation(
-                    perm, X, Y, Z, information, metric, k_means, bandwidth
-                )
-                for perm in permutations
-            ]
-        )
+        null_cmi = np.array([null_fn(perm) for perm in permutations])
     else:
+        chunksize = max(1, n_shuffles // (n_workers * 8))
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             null_cmi = np.array(
-                list(
-                    executor.map(
-                        lambda perm: _null_cmi_for_permutation(
-                            perm, X, Y, Z, information, metric, k_means, bandwidth
-                        ),
-                        permutations,
-                    )
-                )
+                list(executor.map(null_fn, permutations, chunksize=chunksize))
             )
 
     threshold = np.percentile(null_cmi, 100 * (1 - alpha))
