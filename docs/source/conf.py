@@ -12,7 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 project = "Causation Entropy"
 copyright = "2025, Kevin Slote"
 author = "Kevin Slote"
-version = "1.2.1"
+version = "1.2.2"
 
 # Get release version from installed package
 try:

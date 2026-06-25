@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.2] - 2026-06-25
+
+### Added
+
+- **`integration_benchmarks` module** — maps each `test_data_integration.py` test to a named preset with shared `run_integration_benchmark()` / `assert_integration_benchmark()` helpers.
+- **API docs** — presets and integration benchmark functions in `network_discovery.rst`.
+
+### Changed
+
+- **Integration tests** — refactored to run via preset-backed benchmark matrix (473 → ~150 lines).
+- **CONTRIBUTING** — integration test ↔ preset table and local one-liner for single benchmarks.
+- **CI** — integration job comment pointing at the benchmark matrix.
+- **Geometric k-NN entropy** — batched hyperellipsoid checks and vectorized singular-value ratio term.
+
 ## [1.2.1] - 2026-06-25
 
 ### Added
