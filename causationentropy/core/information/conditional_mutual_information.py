@@ -102,6 +102,99 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
     return cmi
 
 
+def gaussian_conditional_mutual_information_batch(X_candidates, Y, Z=None):
+    r"""Evaluate Gaussian CMI for many candidate predictors in one correlation pass.
+
+    Forward selection repeatedly asks the same question with a fixed target ``Y``
+    and conditioning set ``Z``, varying only which single column of ``X`` is the
+    candidate predictor. Each question is
+
+    .. math::
+
+        I(X_j;\, Y \mid Z),
+
+    and naively we would build a separate correlation matrix for every ``j``. The
+    candidates share ``Y`` and ``Z``, however, so we stack all candidate columns
+    into ``X_candidates``, form one matrix :math:`W = [X_{\text{cand}} \mid Y \mid Z]`,
+    call :func:`cached_corrcoef` once, and read each answer from a principal minor
+    of the same :math:`C`.
+
+    Parameters
+    ----------
+    X_candidates : array-like of shape (N, n_cand)
+        Each column is one candidate predictor (typically all remaining variables
+        in a forward-selection step).
+    Y : array-like of shape (N, k_y)
+        Target block held fixed across candidates.
+    Z : array-like of shape (N, k_z) or None
+        Conditioning block held fixed across candidates. ``None`` or empty yields
+        marginal mutual information :math:`I(X_j; Y)` for each column.
+
+    Returns
+    -------
+    cmi : ndarray of shape (n_cand,)
+        Conditional (or marginal) mutual information in nats, one value per column
+        of ``X_candidates``.
+
+    Notes
+    -----
+    Numerically identical to calling :func:`gaussian_conditional_mutual_information`
+    on each one-column slice; this entry point exists to amortize ``corrcoef`` cost
+    during discovery when ``information='gaussian'``.
+    """
+    X_candidates = np.asarray(X_candidates)
+    Y = np.asarray(Y)
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
+
+    n_cand = X_candidates.shape[1]
+    if n_cand == 0:
+        return np.array([])
+
+    ky = Y.shape[1]
+    Z_empty = Z is None or np.asarray(Z).size == 0
+
+    if Z_empty:
+        # Marginal MI I(X_j; Y) for each candidate column j.
+        W = np.hstack((X_candidates, Y))
+        C = cached_corrcoef(W)
+        iy = np.arange(n_cand, n_cand + ky)
+        results = np.empty(n_cand)
+        for j in range(n_cand):
+            ix = np.array([j])
+            ixy = np.concatenate((ix, iy))
+            results[j] = 0.5 * (
+                correlation_log_det_subset(C, ix)
+                + correlation_log_det_subset(C, iy)
+                - correlation_log_det_subset(C, ixy)
+            )
+        return results
+
+    Z = np.asarray(Z)
+    if Z.ndim == 1:
+        Z = Z.reshape(-1, 1)
+    kz = Z.shape[1]
+
+    W = np.hstack((X_candidates, Y, Z))
+    C = cached_corrcoef(W)
+    iy = np.arange(n_cand, n_cand + ky)
+    iz = np.arange(n_cand + ky, n_cand + ky + kz)
+
+    results = np.empty(n_cand)
+    for j in range(n_cand):
+        ix = np.array([j])
+        ixz = np.concatenate((ix, iz))
+        iyz = np.concatenate((iy, iz))
+        ixyz = np.concatenate((ix, iy, iz))
+        results[j] = 0.5 * (
+            correlation_log_det_subset(C, ixz)
+            + correlation_log_det_subset(C, iyz)
+            - correlation_log_det_subset(C, iz)
+            - correlation_log_det_subset(C, ixyz)
+        )
+    return results
+
+
 def kde_conditional_mutual_information(
     X, Y, Z, bandwidth="silverman", kernel="gaussian"
 ):
@@ -352,6 +445,12 @@ def poisson_conditional_mutual_information(X, Y, Z):
     - Discrete interaction networks
     - Epidemiological count models
 
+    Implementation note
+    -------------------
+    The joint correlation matrix ``SXYZ`` is obtained via
+    :func:`cached_corrcoef` so repeated Poisson CMI evaluations inside
+    discovery reuse the same ``corrcoef`` result when the data block is unchanged.
+
     References
     ----------
     .. [1] Fish, A., Sun, J., Bollt, E. Interaction networks from discrete event data by
@@ -360,7 +459,7 @@ def poisson_conditional_mutual_information(X, Y, Z):
     """
 
     if Z is None:
-        SXY = np.corrcoef(X.T, Y.T)
+        SXY = cached_corrcoef(np.hstack((X, Y)))
         l_est = SXY - np.diag(np.diag(SXY))
         np.fill_diagonal(SXY, np.diagonal(SXY) - np.sum(l_est, axis=0))
         Dcov = np.diag(SXY) + np.sum(l_est, axis=0)
@@ -376,7 +475,7 @@ def poisson_conditional_mutual_information(X, Y, Z):
         indY = np.matrix(np.arange(SzY) + SzX)
         indZ = np.matrix(np.arange(SzZ) + SzX + SzY)
         XYZ = np.concatenate((X, Y, Z), axis=1)
-        SXYZ = np.corrcoef(XYZ.T)
+        SXYZ = cached_corrcoef(XYZ)
         SS = SXYZ
         Sa = SXYZ - np.diag(np.diag(SXYZ))
         np.fill_diagonal(SS, np.diagonal(SS) - Sa)

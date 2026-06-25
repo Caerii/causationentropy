@@ -69,6 +69,56 @@ def test_knn_tree_and_dense_agree():
     assert abs(dense - tree) < 0.5
 
 
+def test_gaussian_cmi_batch_matches_serial():
+    """Batched forward-selection CMI must match one-column evaluations."""
+    rng = np.random.default_rng(42)
+    n = 100
+    X = rng.normal(size=(n, 5))
+    Y = rng.normal(size=(n, 1))
+    Z = rng.normal(size=(n, 2))
+
+    from causationentropy.core.information.conditional_mutual_information import (
+        gaussian_conditional_mutual_information,
+        gaussian_conditional_mutual_information_batch,
+    )
+
+    batch = gaussian_conditional_mutual_information_batch(X, Y, Z)
+    serial = np.array(
+        [
+            gaussian_conditional_mutual_information(X[:, [j]], Y, Z)
+            for j in range(5)
+        ]
+    )
+    np.testing.assert_allclose(batch, serial, rtol=1e-10, atol=1e-12)
+
+    batch_marginal = gaussian_conditional_mutual_information_batch(X, Y, None)
+    serial_marginal = np.array(
+        [
+            gaussian_conditional_mutual_information(X[:, [j]], Y, None)
+            for j in range(5)
+        ]
+    )
+    np.testing.assert_allclose(batch_marginal, serial_marginal, rtol=1e-10, atol=1e-12)
+
+
+def test_poisson_cmi_uses_corrcoef_cache():
+    """Repeated Poisson CMI on the same block should hit the corrcoef cache."""
+    rng = np.random.default_rng(4)
+    X = rng.poisson(2, size=(60, 1)).astype(float)
+    Y = rng.poisson(2, size=(60, 1)).astype(float)
+    Z = rng.poisson(2, size=(60, 2)).astype(float)
+
+    from causationentropy.core.information.conditional_mutual_information import (
+        poisson_conditional_mutual_information,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PendingDeprecationWarning)
+        poisson_conditional_mutual_information(X, Y, Z)
+        poisson_conditional_mutual_information(X, Y, Z)
+    assert get_cache_stats()["corrcoef_cache_size"] == 1
+
+
 def test_information_lasso_can_differ_from_lasso():
     rng = np.random.default_rng(3)
     X = rng.normal(size=(120, 8))

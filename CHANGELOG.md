@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.4] - 2026-06-25
+
+### Added
+
+- **`gaussian_conditional_mutual_information_batch`** — evaluates CMI for all
+  remaining forward-selection candidates from one ``corrcoef`` pass.
+
+### Changed
+
+- **Forward selection** — ``standard_forward`` and ``alternative_forward`` call
+  the batched Gaussian path when ``information='gaussian'``.
+- **Poisson CMI** — joint correlation matrices use ``cached_corrcoef`` so
+  repeated evaluations on the same data block avoid redundant work.
+
 ## [1.2.3] - 2026-06-25
 
 ### Changed

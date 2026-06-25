@@ -1,7 +1,7 @@
 """
 Author: Kevin Slote
 Email: kslote@clarkson.edu
-version = 1.2.3
+version = 1.2.4
 """
 
 import copy
@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from causationentropy.core.information.conditional_mutual_information import (
     conditional_mutual_information,
+    gaussian_conditional_mutual_information_batch,
 )
 from causationentropy.core.information.distance_cache import (
     clear_caches,
@@ -701,19 +702,24 @@ def alternative_forward(
         if remaining.size == 0:
             break
 
-        # 1. evaluate each remaining variable
-        ent_values = np.zeros(remaining.size)
-        for k, j in enumerate(remaining):
-            Xj = X_full[:, [j]]  # keep 2-D shape
-            ent_values[k] = conditional_mutual_information(
-                Xj,
-                Y,
-                Z,
-                method=information,
-                metric=metric,
-                k=k_means,
-                bandwidth=bandwidth,
+        # 1. evaluate each remaining variable (batched corrcoef when Gaussian)
+        if information == "gaussian":
+            ent_values = gaussian_conditional_mutual_information_batch(
+                X_full[:, remaining], Y, Z
             )
+        else:
+            ent_values = np.zeros(remaining.size)
+            for k, j in enumerate(remaining):
+                Xj = X_full[:, [j]]  # keep 2-D shape
+                ent_values[k] = conditional_mutual_information(
+                    Xj,
+                    Y,
+                    Z,
+                    method=information,
+                    metric=metric,
+                    k=k_means,
+                    bandwidth=bandwidth,
+                )
 
         # 2. pick best
         j_best = remaining[ent_values.argmax()]
@@ -809,19 +815,24 @@ def standard_forward(
     Z = Z_init.copy() if Z_init is not None else None
 
     while candidates:
-        # 1. compute CMI for every remaining candidate
-        ent_values = np.empty(len(candidates))
-        for k, j in enumerate(candidates):
-            Xj = X_full[:, [j]]  # (T,1)  keep 2‑D
-            ent_values[k] = conditional_mutual_information(
-                Xj,
-                Y,
-                Z,
-                method=information,
-                metric=metric,
-                k=k_means,
-                bandwidth=bandwidth,
+        # 1. compute CMI for every remaining candidate (batched corrcoef when Gaussian)
+        if information == "gaussian":
+            ent_values = gaussian_conditional_mutual_information_batch(
+                X_full[:, candidates], Y, Z
             )
+        else:
+            ent_values = np.empty(len(candidates))
+            for k, j in enumerate(candidates):
+                Xj = X_full[:, [j]]  # (T,1)  keep 2‑D
+                ent_values[k] = conditional_mutual_information(
+                    Xj,
+                    Y,
+                    Z,
+                    method=information,
+                    metric=metric,
+                    k=k_means,
+                    bandwidth=bandwidth,
+                )
 
         # 2. take the arg‑max
         k_best = int(ent_values.argmax())
