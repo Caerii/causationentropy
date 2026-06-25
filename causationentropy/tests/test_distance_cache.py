@@ -124,9 +124,29 @@ def test_information_lasso_can_differ_from_lasso():
     X = rng.normal(size=(120, 8))
     Y = X[:, [0]] + 0.1 * rng.normal(size=(120, 1))
     lasso = lasso_optimal_causation_entropy(X, Y, rng)
-    info = information_lasso_optimal_causation_entropy(X, Y, rng)
+    info = information_lasso_optimal_causation_entropy(X, Y, rng, n_shuffles=0)
     assert isinstance(lasso, list)
     assert isinstance(info, list)
+
+
+def test_information_lasso_significance_prunes_lasso_survivors():
+    """Permutation pruning must never add indices beyond the LASSO support."""
+    rng = np.random.default_rng(5)
+    X = rng.normal(size=(150, 12))
+    Y = X[:, [0]] + 0.05 * rng.normal(size=(150, 1))
+
+    lasso_screen = information_lasso_optimal_causation_entropy(
+        X, Y, rng, n_shuffles=0
+    )
+    pruned = information_lasso_optimal_causation_entropy(
+        X,
+        Y,
+        rng,
+        n_shuffles=60,
+        alpha=0.05,
+        n_jobs=1,
+    )
+    assert set(pruned).issubset(set(lasso_screen))
 
 
 @pytest.mark.integration

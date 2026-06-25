@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.5] - 2026-06-25
+
+### Changed
+
+- **`information_lasso`** — after MI-weighted LASSO screening, survivors are pruned with
+  :func:`backward` permutation tests (``n_shuffles``, ``alpha_backward`` from
+  :func:`discover_network` / presets). Set ``n_shuffles=0`` to skip pruning.
+- **`discover_network`** — passes significance and parallelism kwargs through to
+  ``information_lasso_optimal_causation_entropy``.
+
 ## [1.2.4] - 2026-06-25
 
 ### Added

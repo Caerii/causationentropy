@@ -210,7 +210,7 @@ DISCOVERY_PRESETS: Dict[str, DiscoveryPreset] = {
         "alpha_backward": 0.05,
         "n_shuffles": 1000,
         "n_jobs": 1,
-        "description": "MI-weighted LASSO baseline for high-dimensional screening.",
+        "description": "MI-weighted LASSO screening with backward permutation pruning and high-dimensional screening.",
     },
     "logistic_chaos": {
         "method": "standard",

@@ -1,7 +1,7 @@
 """
 Author: Kevin Slote
 Email: kslote@clarkson.edu
-version = 1.2.4
+version = 1.2.5
 """
 
 import copy
@@ -328,7 +328,18 @@ def discover_network(
                 n_workers,
             )
         if method == "information_lasso":
-            S = information_lasso_optimal_causation_entropy(X_lagged, Y, rng)
+            S = information_lasso_optimal_causation_entropy(
+                X_lagged,
+                Y,
+                rng,
+                alpha=alpha_backward,
+                n_shuffles=n_shuffles,
+                information=information,
+                metric=metric,
+                k_means=k_neighbors,
+                bandwidth=bandwidth,
+                n_jobs=n_workers,
+            )
         if method == "lasso":
             S = lasso_optimal_causation_entropy(X_lagged, Y, rng)
         for s in S:
@@ -538,14 +549,42 @@ def alternative_optimal_causation_entropy(
 
 
 def information_lasso_optimal_causation_entropy(
-    X, Y, rng, criterion="bic", max_lambda=100, cross_val=10, information="gaussian"
+    X,
+    Y,
+    rng,
+    criterion="bic",
+    max_lambda=100,
+    cross_val=10,
+    information="gaussian",
+    alpha=0.05,
+    n_shuffles=200,
+    metric="euclidean",
+    k_means=5,
+    bandwidth="silverman",
+    n_jobs=1,
 ):
     """
-    Execute information-theoretic variant of oCSE with LASSO regularization.
+    Execute information-theoretic oCSE: MI-weighted LASSO screening plus significance pruning.
 
-    This method combines information-theoretic causal discovery with LASSO regularization
-    to handle high-dimensional predictor spaces. The approach balances causal relationship
-    strength with model complexity.
+    The method proceeds in three deliberate stages, each addressing a different failure
+    mode of high-dimensional causal screening:
+
+    1. **Information weighting** — each predictor column is scaled by the square root of
+       its Gaussian mutual information with the target. Predictors that carry little
+       linear information about ``Y`` are down-weighted before regularization, so LASSO
+       spends its degrees of freedom on variables that matter in an information-theoretic
+       sense rather than on raw magnitude alone.
+
+    2. **LASSO selection** — :func:`lasso_optimal_causation_entropy` returns a sparse
+       subset of column indices with non-zero coefficients in the weighted design matrix.
+       This step is fast and controls complexity, but it does not, by itself, provide
+       a calibrated significance statement about causality.
+
+    3. **Permutation pruning** — when ``n_shuffles > 0``, we reuse the backward
+       elimination routine :func:`backward` on the LASSO survivors. For each selected
+       index ``j``, we ask whether ``I(X_j; Y \\mid X_{S\\setminus j})`` exceeds the
+       null threshold from :func:`shuffle_test`. Indices that fail are removed before
+       the parent graph is built.
 
     Parameters
     ----------
@@ -554,26 +593,36 @@ def information_lasso_optimal_causation_entropy(
     Y : array-like of shape (T, 1)
         Target variable column.
     rng : numpy.random.Generator
-        Random number generator.
+        Random number generator for permutation order and shuffle tests.
     criterion : str, default='bic'
-        Information criterion for model selection ('bic' or 'aic').
+        Information criterion for LASSO regularization path selection.
     max_lambda : int, default=100
         Maximum number of LASSO iterations.
     cross_val : int, default=10
-        Cross-validation folds (currently unused).
+        Cross-validation folds (reserved; currently unused by LASSO fitters).
     information : str, default='gaussian'
-        Information measure estimator type.
+        Information estimator for the significance pruning stage.
+    alpha : float, default=0.05
+        Significance level for permutation tests during pruning (typically
+        ``alpha_backward`` from :func:`discover_network`).
+    n_shuffles : int, default=200
+        Number of permutations per shuffle test. Set to ``0`` to skip stage 3 and
+        return the raw LASSO support (useful for fast screening or debugging).
+    metric, k_means, bandwidth, n_jobs
+        Passed through to :func:`backward` for non-Gaussian information types.
 
     Returns
     -------
     S : list of int
-        Indices of selected predictor variables.
+        Indices of predictor variables that survive MI weighting, LASSO screening, and
+        (when enabled) permutation pruning.
 
     Notes
     -----
-    Predictors are weighted by the square root of their Gaussian mutual information
-    with the target before LASSO selection. This emphasizes predictors with stronger
-    linear information content while retaining LASSO sparsity.
+    Plain :func:`lasso_optimal_causation_entropy` omits both MI weighting and permutation
+    pruning. Standard oCSE uses forward/backward selection with significance tests at
+    every step; this method trades that greedy search for a two-stage screen-then-test
+    pipeline suited to ``p >> n`` predictor layouts.
     """
     weights = np.ones(X.shape[1], dtype=float)
     for j in range(X.shape[1]):
@@ -583,7 +632,24 @@ def information_lasso_optimal_causation_entropy(
     selected = lasso_optimal_causation_entropy(
         X_weighted, Y, rng, criterion, max_lambda, cross_val
     )
-    return selected
+
+    if n_shuffles <= 0 or not selected:
+        return selected
+
+    # Stage 3: retain only LASSO survivors that pass conditional permutation tests.
+    return backward(
+        X,
+        Y,
+        selected,
+        rng,
+        alpha=alpha,
+        n_shuffles=n_shuffles,
+        information=information,
+        metric=metric,
+        k_means=k_means,
+        bandwidth=bandwidth,
+        n_jobs=n_jobs,
+    )
 
 
 def lasso_optimal_causation_entropy(
