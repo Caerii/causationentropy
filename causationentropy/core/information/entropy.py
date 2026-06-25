@@ -52,13 +52,26 @@ def hyperellipsoid_check(svd_Yi, Z_i):
     This is used in the geometric k-NN entropy estimation to assess
     the local geometric configuration of nearest neighbors.
     """
-    # U, S, Vt = svd_Yi
-    # transformed = np.dot(Z_i, Vt.T) / S
-    # return np.sum(transformed ** 2) <= 1
-    U, S, Vt = svd_Yi
-    r = len(S)  # local rank
+    Z_i = np.asarray(Z_i)
+    if Z_i.ndim == 1:
+        return bool(_hyperellipsoid_inside(svd_Yi, Z_i[None, :])[0])
+    return bool(np.all(_hyperellipsoid_inside(svd_Yi, Z_i)))
+
+
+def _hyperellipsoid_inside(svd_Yi, Z_i):
+    """Return boolean mask for rows of Z_i inside the unit hyperellipsoid."""
+    _, S, Vt = svd_Yi
+    r = len(S)
     transformed = (Z_i @ Vt.T[:, :r]) / S
-    return (transformed**2).sum() <= 1
+    return (transformed**2).sum(axis=1) <= 1
+
+
+def _singular_ratio_term(sing_Yi):
+    """Sum of log singular-value ratios relative to the leading singular value."""
+    if len(sing_Yi) == 0 or sing_Yi[0] <= 1e-12:
+        return 0.0
+    ratios = sing_Yi / sing_Yi[0]
+    return float(np.sum(np.where(ratios > 1e-12, np.log(ratios), -12.0)))
 
 
 def kde_entropy(X, bandwidth="silverman", kernel="gaussian"):
@@ -182,24 +195,9 @@ def geometric_knn_entropy(X, Xdist, k=1):
             svd_Yi = np.linalg.svd(Y_i)
             sing_Yi = svd_Yi[1]
 
-            # Hyperellipsoid check
-            hyperellipsoid_sum = np.sum(
-                [hyperellipsoid_check(svd_Yi, Z_i[j, :]) for j in range(k)]
-            )
-
-            # Avoid log(0) in the hyperellipsoid term
+            hyperellipsoid_sum = int(_hyperellipsoid_inside(svd_Yi, Z_i).sum())
             log_hyper = -np.log(max(1, hyperellipsoid_sum))
-
-            # Singular value ratio term with safety checks
-            sing_ratio_sum = 0.0
-            if len(sing_Yi) > 0 and sing_Yi[0] > 1e-12:
-                for l in range(min(d, len(sing_Yi))):
-                    if l < len(sing_Yi) and sing_Yi[l] > 1e-12:
-                        ratio = sing_Yi[l] / sing_Yi[0]
-                        if ratio > 1e-12:
-                            sing_ratio_sum += np.log(ratio)
-                        else:
-                            sing_ratio_sum += -12.0  # log(1e-12)
+            sing_ratio_sum = _singular_ratio_term(sing_Yi)
 
             correction = log_hyper + sing_ratio_sum
             if np.isfinite(correction):
