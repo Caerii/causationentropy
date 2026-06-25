@@ -101,6 +101,40 @@ def test_gaussian_cmi_batch_matches_serial():
     np.testing.assert_allclose(batch_marginal, serial_marginal, rtol=1e-10, atol=1e-12)
 
 
+def test_poisson_cmi_batch_matches_serial():
+    """Batched Poisson forward-selection CMI must match one-column evaluations."""
+    rng = np.random.default_rng(43)
+    n = 80
+    X = rng.poisson(3, size=(n, 4)).astype(float)
+    Y = rng.poisson(3, size=(n, 1)).astype(float)
+    Z = rng.poisson(3, size=(n, 2)).astype(float)
+
+    from causationentropy.core.information.conditional_mutual_information import (
+        poisson_conditional_mutual_information,
+        poisson_conditional_mutual_information_batch,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PendingDeprecationWarning)
+        batch = poisson_conditional_mutual_information_batch(X, Y, Z)
+        serial = np.array(
+            [
+                poisson_conditional_mutual_information(X[:, [j]], Y, Z)
+                for j in range(4)
+            ]
+        )
+        np.testing.assert_allclose(batch, serial, rtol=1e-10, atol=1e-12)
+
+        batch_marginal = poisson_conditional_mutual_information_batch(X, Y, None)
+        serial_marginal = np.array(
+            [
+                poisson_conditional_mutual_information(X[:, [j]], Y, None)
+                for j in range(4)
+            ]
+        )
+        np.testing.assert_allclose(batch_marginal, serial_marginal, rtol=1e-10, atol=1e-12)
+
+
 def test_poisson_cmi_uses_corrcoef_cache():
     """Repeated Poisson CMI on the same block should hit the corrcoef cache."""
     rng = np.random.default_rng(4)

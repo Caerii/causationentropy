@@ -402,6 +402,108 @@ def geometric_knn_conditional_mutual_information(
     return cmi
 
 
+def _poisson_marginal_mi_from_correlation(SXY: np.ndarray, ix: np.ndarray, iy: np.ndarray) -> float:
+    """Poisson MI from a joint correlation matrix and column index blocks."""
+    idx = np.concatenate((ix, iy))
+    block = SXY[np.ix_(idx, idx)]
+    l_est = block - np.diag(np.diag(block))
+    np.fill_diagonal(block, np.diagonal(block) - np.sum(l_est, axis=0))
+    dcov = np.diag(block) + np.sum(l_est, axis=0)
+    tf = poisson_joint_entropy(block)
+    ft = np.sum(poisson_entropy(dcov))
+    return float(ft - tf)
+
+
+def _poisson_conditional_cmi_from_correlation(
+    SXYZ: np.ndarray, ix: np.ndarray, iy: np.ndarray, iz: np.ndarray
+) -> float:
+    """Poisson CMI from one joint correlation matrix and X/Y/Z column indices.
+
+    The Fish–Sun–Bollt Poisson estimator rearranges off-diagonal covariance
+    mass in the correlation matrix before evaluating joint entropies. This
+    helper performs that rearrangement using arbitrary column indices so we can
+    evaluate many single-column candidates against the same cached ``SXYZ``.
+    """
+    ix = np.asarray(ix, dtype=int)
+    iy = np.asarray(iy, dtype=int)
+    iz = np.asarray(iz, dtype=int)
+
+    SS = SXYZ.copy()
+    Sa = SXYZ - np.diag(np.diag(SXYZ))
+    np.fill_diagonal(SS, np.diagonal(SS) - np.diag(Sa))
+    SS[np.ix_(ix, ix)] = SS[np.ix_(ix, ix)] + SXYZ[np.ix_(ix, iy)]
+    SS[np.ix_(iy, iy)] = SS[np.ix_(iy, iy)] + SXYZ[np.ix_(iy, ix)]
+
+    yz_idx = np.concatenate((iy, iz))
+    xz_idx = np.concatenate((ix, iz))
+    s_est_yz = SS[np.ix_(yz_idx, yz_idx)]
+    s_est_xz = SS[np.ix_(xz_idx, xz_idx)]
+    hyz = poisson_joint_entropy(s_est_yz)
+    hz = poisson_joint_entropy(SS[np.ix_(iz, iz)])
+    hxyz = poisson_joint_entropy(SXYZ - np.diag(Sa))
+    hxz = poisson_joint_entropy(s_est_xz)
+    h_yz = hyz - hz
+    h_xyz = hxyz - hxz
+    return float(h_xyz - h_yz)
+
+
+def poisson_conditional_mutual_information_batch(X_candidates, Y, Z=None):
+    r"""Evaluate Poisson CMI for many candidate predictors from one ``corrcoef`` pass.
+
+    Forward selection with ``information='poisson'`` asks the same conditional
+    information question as the Gaussian batch path, but the Fish–Sun–Bollt
+    estimator works from a joint correlation matrix and block-wise entropy
+    decompositions. We stack all candidates with ``Y`` and ``Z``, cache one
+    ``corrcoef`` on the full block, then extract the principal submatrix for
+    each candidate ``[X_j, Y, Z]`` before applying the Poisson rearrangement.
+    """
+    X_candidates = np.asarray(X_candidates)
+    Y = np.asarray(Y)
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
+
+    n_cand = X_candidates.shape[1]
+    if n_cand == 0:
+        return np.array([])
+
+    ky = Y.shape[1]
+    Z_empty = Z is None or np.asarray(Z).size == 0
+
+    if Z_empty:
+        W = np.hstack((X_candidates, Y))
+        SXY = cached_corrcoef(W)
+        iy_local = np.arange(1, 1 + ky)
+        results = np.empty(n_cand)
+        for j in range(n_cand):
+            cols = np.concatenate(([j], np.arange(n_cand, n_cand + ky)))
+            sub = SXY[np.ix_(cols, cols)]
+            results[j] = _poisson_marginal_mi_from_correlation(
+                sub, np.array([0]), iy_local
+            )
+        return results
+
+    Z = np.asarray(Z)
+    if Z.ndim == 1:
+        Z = Z.reshape(-1, 1)
+    kz = Z.shape[1]
+
+    W = np.hstack((X_candidates, Y, Z))
+    SXYZ = cached_corrcoef(W)
+    iy_local = np.arange(1, 1 + ky)
+    iz_local = np.arange(1 + ky, 1 + ky + kz)
+
+    results = np.empty(n_cand)
+    for j in range(n_cand):
+        cols = np.concatenate(
+            ([j], np.arange(n_cand, n_cand + ky), np.arange(n_cand + ky, n_cand + ky + kz))
+        )
+        sub = SXYZ[np.ix_(cols, cols)]
+        results[j] = _poisson_conditional_cmi_from_correlation(
+            sub, np.array([0]), iy_local, iz_local
+        )
+    return results
+
+
 def poisson_conditional_mutual_information(X, Y, Z):
     """
     Estimate conditional mutual information for multivariate Poisson distributions.
@@ -460,46 +562,17 @@ def poisson_conditional_mutual_information(X, Y, Z):
 
     if Z is None:
         SXY = cached_corrcoef(np.hstack((X, Y)))
-        l_est = SXY - np.diag(np.diag(SXY))
-        np.fill_diagonal(SXY, np.diagonal(SXY) - np.sum(l_est, axis=0))
-        Dcov = np.diag(SXY) + np.sum(l_est, axis=0)
-        TF = poisson_joint_entropy(SXY)
-        FT = np.sum(poisson_entropy(Dcov))
+        ix = np.arange(X.shape[1])
+        iy = np.arange(X.shape[1], X.shape[1] + Y.shape[1])
+        return _poisson_marginal_mi_from_correlation(SXY, ix, iy)
 
-        return FT - TF
-    else:
-        SzX = X.shape[1]
-        SzY = Y.shape[1]
-        SzZ = Z.shape[1]
-        indX = np.matrix(np.arange(SzX))
-        indY = np.matrix(np.arange(SzY) + SzX)
-        indZ = np.matrix(np.arange(SzZ) + SzX + SzY)
-        XYZ = np.concatenate((X, Y, Z), axis=1)
-        SXYZ = cached_corrcoef(XYZ)
-        SS = SXYZ
-        Sa = SXYZ - np.diag(np.diag(SXYZ))
-        np.fill_diagonal(SS, np.diagonal(SS) - Sa)
-        SS[0:SzX, 0:SzX] = SS[0:SzX, 0:SzX] + SXYZ[0:SzX, SzX : SzX + SzY]
-        SS[SzX : SzX + SzY, SzX : SzX + SzY] = (
-            SS[SzX : SzX + SzY, SzX : SzX + SzY] + SXYZ[SzX : SzX + SzY, 0:SzX]
-        )
-        S_est1 = SS[
-            np.concatenate((indY.T, indZ.T), axis=0),
-            np.concatenate((indY.T, indZ.T), axis=0),
-        ]
-        S_est2 = SS[
-            np.concatenate((indX.T, indZ.T), axis=0),
-            np.concatenate((indX.T, indZ.T), axis=0),
-        ]
-        HYZ = poisson_joint_entropy(S_est1)
-        SindZ = SS[indZ, indZ]
-        HZ = poisson_joint_entropy(SindZ)
-        HXYZ = poisson_joint_entropy(SXYZ - np.diag(Sa))
-        HXZ = poisson_joint_entropy(S_est2)
-        H_YZ = HYZ - HZ
-        H_XYZ = HXYZ - HXZ
-        cmi = H_XYZ - H_YZ
-        return cmi
+    XYZ = np.concatenate((X, Y, Z), axis=1)
+    SXYZ = cached_corrcoef(XYZ)
+    kx, ky, kz = X.shape[1], Y.shape[1], Z.shape[1]
+    ix = np.arange(kx)
+    iy = np.arange(kx, kx + ky)
+    iz = np.arange(kx + ky, kx + ky + kz)
+    return _poisson_conditional_cmi_from_correlation(SXYZ, ix, iy, iz)
 
 
 def conditional_mutual_information(

@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.6] - 2026-06-25
+
+### Added
+
+- **`poisson_conditional_mutual_information_batch`** — evaluates Poisson CMI for all
+  remaining forward-selection candidates from one ``corrcoef`` pass (principal
+  submatrix per candidate).
+
+### Changed
+
+- **Forward selection** — ``alternative_forward`` and ``standard_forward`` call
+  the batched Poisson path when ``information='poisson'``.
+
 ## [1.2.5] - 2026-06-25
 
 ### Changed

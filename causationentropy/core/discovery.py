@@ -1,7 +1,7 @@
 """
 Author: Kevin Slote
 Email: kslote@clarkson.edu
-version = 1.2.5
+version = 1.2.6
 """
 
 import copy
@@ -19,6 +19,7 @@ from tqdm import tqdm
 from causationentropy.core.information.conditional_mutual_information import (
     conditional_mutual_information,
     gaussian_conditional_mutual_information_batch,
+    poisson_conditional_mutual_information_batch,
 )
 from causationentropy.core.information.distance_cache import (
     clear_caches,
@@ -768,9 +769,13 @@ def alternative_forward(
         if remaining.size == 0:
             break
 
-        # 1. evaluate each remaining variable (batched corrcoef when Gaussian)
+        # 1. evaluate each remaining variable (batched corrcoef when Gaussian/Poisson)
         if information == "gaussian":
             ent_values = gaussian_conditional_mutual_information_batch(
+                X_full[:, remaining], Y, Z
+            )
+        elif information == "poisson":
+            ent_values = poisson_conditional_mutual_information_batch(
                 X_full[:, remaining], Y, Z
             )
         else:
@@ -881,9 +886,13 @@ def standard_forward(
     Z = Z_init.copy() if Z_init is not None else None
 
     while candidates:
-        # 1. compute CMI for every remaining candidate (batched corrcoef when Gaussian)
+        # 1. compute CMI for every remaining candidate (batched corrcoef when Gaussian/Poisson)
         if information == "gaussian":
             ent_values = gaussian_conditional_mutual_information_batch(
+                X_full[:, candidates], Y, Z
+            )
+        elif information == "poisson":
+            ent_values = poisson_conditional_mutual_information_batch(
                 X_full[:, candidates], Y, Z
             )
         else:
