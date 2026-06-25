@@ -107,6 +107,20 @@ include = ["causationentropy*"]
 [tool.setuptools.package-data]
 causationentropy = ["datasets/data/*", "*.json", "*.yaml"]
 
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=22.0",
+    "flake8>=4.0",
+    "isort>=5.0",
+    "mypy>=0.900",
+    "pre-commit>=2.15.0",
+]
+
 # Development tools configuration
 [tool.pytest.ini_options]
 testpaths = ["causationentropy/tests"]

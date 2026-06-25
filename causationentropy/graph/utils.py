@@ -1,3 +1,5 @@
+from typing import Tuple, Union
+
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -472,3 +474,73 @@ def pcmci_network_to_dataframe(G: nx.MultiDiGraph) -> pd.DataFrame:
         col for col in optional_columns if col in df.columns
     ]
     return df[ordered_columns]
+
+
+def network_to_adjacency(
+    graph: nx.Graph,
+    nodelist=None,
+    collapse_lags: bool = True,
+) -> np.ndarray:
+    """Convert a discovered network graph to a binary adjacency matrix.
+
+    Parameters
+    ----------
+    graph : networkx.Graph
+        Causal network, typically a ``MultiDiGraph`` from ``discover_network``.
+    nodelist : list, optional
+        Node ordering for the adjacency matrix. Defaults to ``list(graph.nodes())``.
+    collapse_lags : bool, default=True
+        If True, multiple edges between the same node pair (different lags) are
+        collapsed into a single binary edge.
+
+    Returns
+    -------
+    np.ndarray
+        Square adjacency matrix with shape ``(n_nodes, n_nodes)``.
+    """
+    if nodelist is None:
+        nodelist = list(graph.nodes())
+    adjacency = nx.to_numpy_array(graph, nodelist=nodelist, weight=None)
+    if collapse_lags:
+        adjacency = (adjacency > 0).astype(int)
+    return adjacency
+
+
+def evaluate_network_recovery(
+    ground_truth: Union[nx.Graph, np.ndarray],
+    discovered: nx.Graph,
+) -> Tuple[float, float]:
+    """Compute TPR/FPR between ground truth and a discovered network.
+
+    Parameters
+    ----------
+    ground_truth : networkx.Graph or np.ndarray
+        Ground-truth adjacency as a graph or binary matrix.
+    discovered : networkx.Graph
+        Discovered causal network from ``discover_network``.
+
+    Returns
+    -------
+    tpr : float
+        True positive rate.
+    fpr : float
+        False positive rate.
+    """
+    from causationentropy.core.stats import Compute_TPR_FPR
+
+    if isinstance(ground_truth, np.ndarray):
+        A = (ground_truth > 0).astype(int)
+        n = A.shape[0]
+    else:
+        gt_nodes = sorted(ground_truth.nodes(), key=str)
+        A = network_to_adjacency(ground_truth, nodelist=gt_nodes)
+        n = len(gt_nodes)
+
+    disc_nodes = sorted(discovered.nodes(), key=str)
+    if len(disc_nodes) != n:
+        raise ValueError(
+            f"Node count mismatch: ground truth has {n} nodes, "
+            f"discovered graph has {len(disc_nodes)}."
+        )
+    B = network_to_adjacency(discovered, nodelist=disc_nodes)
+    return Compute_TPR_FPR(A, B)

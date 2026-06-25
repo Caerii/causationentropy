@@ -1,3 +1,4 @@
 __version__ = "1.1.0"
-from . import discovery, information, linalg, plotting, stats
+from . import discovery, information, linalg, plotting, presets, stats
 from .discovery import discover_network
+from .presets import describe_preset, get_discovery_preset, list_presets

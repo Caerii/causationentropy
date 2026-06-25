@@ -168,17 +168,15 @@ def Compute_TPR_FPR(A, B):
     n = A.shape[0]
     assert A.shape[0] == A.shape[1] == B.shape[0] == B.shape[1]
 
-    # Count true positives, false negatives, false positives
-    # A - B > 0: edges in A but not in B (false negatives)
-    # A - B < 0: edges in B but not in A (false positives)
+    off_diag = ~np.eye(n, dtype=bool)
 
-    false_negatives = np.sum((A - B) > 0)
-    false_positives = np.sum((A - B) < 0)
+    # Count true positives, false negatives, false positives (off-diagonal only)
+    diff = A - B
+    false_negatives = np.sum(diff[off_diag] > 0)
+    false_positives = np.sum(diff[off_diag] < 0)
 
-    total_positives = np.sum(A)  # Total edges in ground truth
-    total_negatives = (
-        n * (n - 1) - total_positives
-    )  # Total non-edges (excluding diagonal)
+    total_positives = np.sum(A[off_diag])
+    total_negatives = np.sum((A[off_diag] == 0))
 
     # Compute TPR and FPR
     TPR = 1 - (false_negatives / total_positives) if total_positives > 0 else 1.0

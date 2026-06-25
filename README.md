@@ -72,6 +72,26 @@ df = network_to_dataframe(network)
 df.head()
 ```
 
+### Reproduction presets (validated settings)
+
+Integration-test tuned configurations are available as named presets:
+
+```python
+from causationentropy import discover_network, list_presets
+
+print(list_presets())  # e.g. 'reproduction', 'knn_standard', 'poisson_standard'
+
+# Paper-style linear Gaussian benchmark (max_lag=1, n_shuffles=1000)
+network = discover_network(data, preset="reproduction", show_progress=True)
+```
+
+Run the benchmark script locally:
+
+```bash
+uv run python examples/reproduce_benchmark.py --preset reproduction
+uv run python examples/reproduce_benchmark.py --list
+```
+
 Plot the causal network:
 ```python
 from causationentropy import discover_network

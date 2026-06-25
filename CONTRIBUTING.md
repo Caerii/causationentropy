@@ -26,7 +26,8 @@ The typical workflow for adding new methods:
 
 ## Development Setup
 
-1. **Clone and setup**:
+1. **Clone and setup** (pip or [uv](https://docs.astral.sh/uv/)):
+
    ```bash
    git clone https://github.com/Center-For-Complex-Systems-Science/causationentropy.git
    cd causationentropy
@@ -35,10 +36,23 @@ The typical workflow for adding new methods:
    pip install -e .[dev,docs,plotting]
    ```
 
+   With uv:
+
+   ```bash
+   uv venv --python 3.11
+   uv sync --group dev
+   uv pip install -e ".[dev,docs,plotting]"
+   ```
+
 2. **Verify installation**:
    ```bash
    pytest causationentropy/tests/
+   pytest causationentropy/tests/test_data_integration.py -m integration  # reproduction gate
    ```
+
+3. **Discovery presets**: use `discover_network(..., preset="reproduction")` for
+   integration-test tuned settings. See `causationentropy/core/presets.py` and
+   `examples/reproduce_benchmark.py`.
 
 ## Implementing New Methods
 

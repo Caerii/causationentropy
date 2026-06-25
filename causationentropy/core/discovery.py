@@ -3,17 +3,31 @@ Author: Kevin Slote
 Email: kslote@clarkson.edu
 version = 1.1.0
 """
+
 import copy
-from typing import Dict, Tuple, Union
+import os
+import warnings
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, Optional, Tuple, Union
 
 import networkx as nx
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import Lasso, LassoLarsIC
+from tqdm import tqdm
 
 from causationentropy.core.information.conditional_mutual_information import (
     conditional_mutual_information,
 )
+from causationentropy.core.presets import apply_preset_to_params
+
+
+def _resolve_n_jobs(n_jobs: int) -> int:
+    if n_jobs == -1:
+        return os.cpu_count() or 1
+    if n_jobs < 1:
+        return 1
+    return n_jobs
 
 
 def discover_network(
@@ -26,8 +40,13 @@ def discover_network(
     metric: str = "euclidean",
     bandwidth="silverman",
     k_means: int = 5,
+    k: Optional[int] = None,
     n_shuffles: int = 200,
-    n_jobs=-1,
+    n_jobs: int = -1,
+    preset: Optional[str] = None,
+    seed: int = 42,
+    verbose: bool = False,
+    show_progress: bool = True,
 ) -> nx.MultiDiGraph:
     r"""
     Infer a causal graph via Optimal Causation Entropy (oCSE).
@@ -85,7 +104,11 @@ def discover_network(
         Maximum time lag to consider in causal relationships. The algorithm examines
         lags from 1 to max_lag (inclusive).
     k_means : int, default=5
-        Number of clusters for k-means based estimators (when applicable).
+        Number of nearest neighbors for k-NN based estimators. Deprecated name;
+        prefer ``k``.
+    k : int, optional
+        Number of nearest neighbors for k-NN based estimators. Overrides
+        ``k_means`` when provided.
     alpha_forward : float, default=0.05
         Significance level for forward selection permutation tests. Lower values
         require stronger evidence for causal relationships.
@@ -97,7 +120,18 @@ def discover_network(
         Number of permutations for statistical significance testing. Higher values
         provide more accurate p-value estimates but increase computational cost.
     n_jobs : int, default=-1
-        Number of parallel jobs for computation. -1 uses all available processors.
+        Number of parallel workers for permutation tests. ``-1`` uses all CPU
+        cores, ``1`` runs serially.
+    preset : str, optional
+        Named configuration from :data:`causationentropy.core.presets.DISCOVERY_PRESETS`.
+        Presets encode integration-test tuned settings (e.g. ``"reproduction"``,
+        ``"knn_standard"``, ``"poisson_standard"``). See :func:`list_presets`.
+    seed : int, default=42
+        Random seed for permutation tests and backward elimination order.
+    verbose : bool, default=False
+        If True, print a status line for each target variable.
+    show_progress : bool, default=True
+        If True, display a progress bar over target variables.
 
     Returns
     -------
@@ -148,7 +182,35 @@ def discover_network(
 
     .. [2] Schreiber, T. Measuring information transfer. Physical Review Letters 85, 461 (2000).
     """
-    rng = np.random.default_rng(42)
+    k_neighbors = k if k is not None else k_means
+
+    if preset is not None:
+        merged = apply_preset_to_params(
+            preset,
+            method,
+            information,
+            max_lag,
+            alpha_forward,
+            alpha_backward,
+            metric,
+            bandwidth,
+            k_neighbors,
+            n_shuffles,
+            n_jobs,
+        )
+        method = merged["method"]
+        information = merged["information"]
+        max_lag = merged["max_lag"]
+        alpha_forward = merged["alpha_forward"]
+        alpha_backward = merged["alpha_backward"]
+        metric = merged["metric"]
+        bandwidth = merged["bandwidth"]
+        k_neighbors = merged["k_neighbors"]
+        n_shuffles = merged["n_shuffles"]
+        n_jobs = merged["n_jobs"]
+
+    rng = np.random.default_rng(seed)
+    n_workers = _resolve_n_jobs(n_jobs)
 
     if method not in ["standard", "alternative", "information_lasso", "lasso"]:
         raise NotImplementedError(f"discover_network: method={method} not supported.")
@@ -189,8 +251,18 @@ def discover_network(
     G.add_nodes_from(var_names)
 
     # Step 3: Loop over each variable and infer parents from lagged predictors
-    for i in range(n):
-        print(f"Estimating edges for node {i} ({var_names[i]})")
+    target_indices = range(n)
+    if show_progress and n > 1:
+        target_indices = tqdm(
+            target_indices,
+            desc="Causal discovery",
+            unit="variable",
+            disable=False,
+        )
+
+    for i in target_indices:
+        if verbose:
+            print(f"Estimating edges for node {i} ({var_names[i]})")
 
         Y = Y_all[:, [i]]  # shape: (T - max_lag, 1)
         if method == "standard":
@@ -208,8 +280,9 @@ def discover_network(
                 n_shuffles,
                 information,
                 metric,
-                k_means,
+                k_neighbors,
                 bandwidth,
+                n_workers,
             )
         if method == "alternative":
             S = alternative_optimal_causation_entropy(
@@ -221,8 +294,9 @@ def discover_network(
                 n_shuffles,
                 information,
                 metric,
-                k_means,
+                k_neighbors,
                 bandwidth,
+                n_workers,
             )
         if method == "information_lasso":
             S = information_lasso_optimal_causation_entropy(X_lagged, Y, rng)
@@ -246,7 +320,7 @@ def discover_network(
                 Z_cond,
                 method=information,
                 metric=metric,
-                k=k_means,
+                k=k_neighbors,
                 bandwidth=bandwidth,
             )
 
@@ -261,8 +335,9 @@ def discover_network(
                 n_shuffles=n_shuffles,
                 information=information,
                 metric=metric,
-                k_means=k_means,
+                k_means=k_neighbors,
                 bandwidth=bandwidth,
+                n_jobs=n_workers,
             )
 
             G.add_edge(
@@ -288,6 +363,7 @@ def standard_optimal_causation_entropy(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     r"""
     Execute the standard optimal Causation Entropy algorithm with initial conditioning set.
@@ -329,7 +405,17 @@ def standard_optimal_causation_entropy(
     """
 
     forward_pass = standard_forward(
-        X, Y, Z_init, rng, alpha1, n_shuffles, information, metric, k_means, bandwidth
+        X,
+        Y,
+        Z_init,
+        rng,
+        alpha1,
+        n_shuffles,
+        information,
+        metric,
+        k_means,
+        bandwidth,
+        n_jobs,
     )
 
     S = backward(
@@ -343,6 +429,7 @@ def standard_optimal_causation_entropy(
         metric,
         k_means,
         bandwidth,
+        n_jobs,
     )
 
     return S
@@ -359,6 +446,7 @@ def alternative_optimal_causation_entropy(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     """
     Execute the alternative optimal Causation Entropy algorithm without initial conditioning.
@@ -391,7 +479,16 @@ def alternative_optimal_causation_entropy(
     """
 
     forward_pass = alternative_forward(
-        X, Y, rng, alpha1, n_shuffles, information, metric, k_means, bandwidth
+        X,
+        Y,
+        rng,
+        alpha1,
+        n_shuffles,
+        information,
+        metric,
+        k_means,
+        bandwidth,
+        n_jobs,
     )
 
     S = backward(
@@ -405,6 +502,7 @@ def alternative_optimal_causation_entropy(
         metric,
         k_means,
         bandwidth,
+        n_jobs,
     )
 
     return S
@@ -447,6 +545,12 @@ def information_lasso_optimal_causation_entropy(
     This is a simplified implementation that delegates to LASSO. Future versions
     will incorporate information-theoretic weighting into the regularization.
     """
+    warnings.warn(
+        "information_lasso currently delegates to lasso_optimal_causation_entropy; "
+        "information-theoretic weighting is not yet implemented.",
+        UserWarning,
+        stacklevel=2,
+    )
 
     # This is a simplified implementation - needs proper information-theoretic weighting
     return lasso_optimal_causation_entropy(X, Y, rng, criterion, max_lambda, cross_val)
@@ -514,6 +618,7 @@ def alternative_forward(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     r"""
     Forward selection phase of oCSE without initial conditioning set.
@@ -599,6 +704,7 @@ def alternative_forward(
             metric=metric,
             k_means=k_means,
             bandwidth=bandwidth,
+            n_jobs=n_jobs,
         )["Pass"]
         if not passed:
             break
@@ -621,6 +727,7 @@ def standard_forward(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     r"""
     Standard forward selection phase of oCSE with initial conditioning set.
@@ -706,6 +813,7 @@ def standard_forward(
             metric=metric,
             k_means=k_means,
             bandwidth=bandwidth,
+            n_jobs=n_jobs,
         )["Pass"]
 
         if not passed:
@@ -731,6 +839,7 @@ def backward(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     r"""
     Backward elimination phase of optimal Causation Entropy.
@@ -804,11 +913,34 @@ def backward(
             metric=metric,
             k_means=k_means,
             bandwidth=bandwidth,
+            n_jobs=n_jobs,
         )["Pass"]
         if not passed:
             S.remove(j)  # prune j
 
     return S
+
+
+def _null_cmi_for_permutation(
+    perm,
+    X,
+    Y,
+    Z,
+    information,
+    metric,
+    k_means,
+    bandwidth,
+):
+    X_perm = X[perm, :]
+    return conditional_mutual_information(
+        X_perm,
+        Y,
+        Z,
+        method=information,
+        metric=metric,
+        k=k_means,
+        bandwidth=bandwidth,
+    )
 
 
 def shuffle_test(
@@ -823,6 +955,7 @@ def shuffle_test(
     metric="euclidean",
     k_means=5,
     bandwidth="silverman",
+    n_jobs=1,
 ):
     r"""
     Permutation test for conditional mutual information significance.
@@ -902,19 +1035,30 @@ def shuffle_test(
     >>> print(f"Significant: {result['Pass']}, p-value ≈ {1 - result['Value']/result['Threshold']:.3f}")
     """
     rng = np.random.default_rng(rng)
-    null_cmi = np.empty(n_shuffles)
+    n_workers = _resolve_n_jobs(n_jobs)
+    permutations = [rng.permutation(len(X)) for _ in range(n_shuffles)]
 
-    for i in range(n_shuffles):
-        X_perm = X[rng.permutation(len(X)), :]  # shuffle rows
-        null_cmi[i] = conditional_mutual_information(
-            X_perm,
-            Y,
-            Z,
-            method=information,
-            metric=metric,
-            k=k_means,
-            bandwidth=bandwidth,
+    if n_workers == 1:
+        null_cmi = np.array(
+            [
+                _null_cmi_for_permutation(
+                    perm, X, Y, Z, information, metric, k_means, bandwidth
+                )
+                for perm in permutations
+            ]
         )
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            null_cmi = np.array(
+                list(
+                    executor.map(
+                        lambda perm: _null_cmi_for_permutation(
+                            perm, X, Y, Z, information, metric, k_means, bandwidth
+                        ),
+                        permutations,
+                    )
+                )
+            )
 
     threshold = np.percentile(null_cmi, 100 * (1 - alpha))
     # Calculate p-value: proportion of null values >= observed value
