@@ -5,7 +5,8 @@ from scipy.special import digamma
 
 from causationentropy.core.information.distance_cache import (
     cached_cdist,
-    cached_detcorr,
+    cached_corrcoef,
+    correlation_log_det_subset,
     supports_kd_tree,
     tree_knn_distances,
     tree_neighbors_within_distance,
@@ -56,12 +57,19 @@ def gaussian_mutual_information(X, Y):
     and may underestimate the true mutual information.
     """
 
-    SX = cached_detcorr(X)
-    SY = cached_detcorr(Y)
-    SXY = cached_detcorr(np.hstack((X, Y)))
-
-    mi = 0.5 * (SX + SY - SXY)
-    return mi
+    kx, ky = X.shape[1], Y.shape[1]
+    if kx == 0 or ky == 0:
+        return 0.0
+    W = np.hstack((X, Y))
+    C = cached_corrcoef(W)
+    ix = np.arange(kx)
+    iy = np.arange(kx, kx + ky)
+    all_cols = np.arange(C.shape[0])
+    return 0.5 * (
+        correlation_log_det_subset(C, ix)
+        + correlation_log_det_subset(C, iy)
+        - correlation_log_det_subset(C, all_cols)
+    )
 
 
 def kde_mutual_information(X, Y, bandwidth="silverman", kernel="gaussian"):

@@ -3,7 +3,8 @@ from scipy.special import digamma
 
 from causationentropy.core.information.distance_cache import (
     cached_cdist,
-    cached_detcorr,
+    cached_corrcoef,
+    correlation_log_det_subset,
     supports_kd_tree,
     tree_knn_distances,
     tree_neighbors_within_distance,
@@ -73,12 +74,22 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
     if Z is None:
         return gaussian_mutual_information(X, Y)
 
-    SZ = cached_detcorr(Z)
-    SXZ = cached_detcorr(np.hstack((X, Z)))
-    SYZ = cached_detcorr(np.hstack((Y, Z)))
-    SXYZ = cached_detcorr(np.hstack((X, Y, Z)))
+    kx, ky, kz = X.shape[1], Y.shape[1], Z.shape[1]
+    W = np.hstack((X, Y, Z))
+    C = cached_corrcoef(W)
+    ix = np.arange(kx)
+    iy = np.arange(kx, kx + ky)
+    iz = np.arange(kx + ky, kx + ky + kz)
+    ixz = np.concatenate((ix, iz))
+    iyz = np.concatenate((iy, iz))
+    ixyz = np.concatenate((ix, iy, iz))
 
-    cmi = 0.5 * (SXZ + SYZ - SZ - SXYZ)
+    cmi = 0.5 * (
+        correlation_log_det_subset(C, ixz)
+        + correlation_log_det_subset(C, iyz)
+        - correlation_log_det_subset(C, iz)
+        - correlation_log_det_subset(C, ixyz)
+    )
     return cmi
 
 

@@ -14,9 +14,12 @@ _distance_cache: Dict[str, np.ndarray] = {}
 _tree_cache: Dict[str, Any] = {}
 _detcorr_cache: Dict[str, float] = {}
 
+_corrcoef_cache: Dict[str, np.ndarray] = {}
+
 _distance_cache_size = 128
 _tree_cache_size = 100
 _detcorr_cache_size = 128
+_corrcoef_cache_size = 128
 
 
 def _array_hash(arr: np.ndarray, metric: str = "euclidean", extra: str = "") -> str:
@@ -36,6 +39,7 @@ def clear_caches() -> None:
     _distance_cache.clear()
     _tree_cache.clear()
     _detcorr_cache.clear()
+    _corrcoef_cache.clear()
 
 
 def get_cache_stats() -> Dict[str, int]:
@@ -47,6 +51,8 @@ def get_cache_stats() -> Dict[str, int]:
         "tree_cache_limit": _tree_cache_size,
         "detcorr_cache_size": len(_detcorr_cache),
         "detcorr_cache_limit": _detcorr_cache_size,
+        "corrcoef_cache_size": len(_corrcoef_cache),
+        "corrcoef_cache_limit": _corrcoef_cache_size,
     }
 
 
@@ -106,6 +112,41 @@ def cached_detcorr(A: np.ndarray) -> float:
         del _detcorr_cache[next(iter(_detcorr_cache))]
     _detcorr_cache[key] = result
     return result
+
+
+def _correlation_log_det_from_matrix(C: np.ndarray) -> float:
+    """Signed log-determinant of a correlation matrix with singular fallback."""
+    if C.ndim == 0:
+        return 0.0
+    sign, logdet = np.linalg.slogdet(C)
+    if sign == 0 or not np.isfinite(logdet):
+        return -1000.0
+    return float(logdet)
+
+
+def cached_corrcoef(A: np.ndarray) -> np.ndarray:
+    """Cached full correlation matrix for a data block."""
+    A = np.asarray(A)
+    if A.shape[1] == 0:
+        return np.zeros((0, 0))
+    key = _array_hash(A, extra="corrcoef")
+    if key in _corrcoef_cache:
+        return _corrcoef_cache[key]
+    C = np.corrcoef(A.T)
+    if len(_corrcoef_cache) >= _corrcoef_cache_size:
+        del _corrcoef_cache[next(iter(_corrcoef_cache))]
+    _corrcoef_cache[key] = C
+    return C
+
+
+def correlation_log_det_subset(C: np.ndarray, indices: np.ndarray) -> float:
+    """Log-determinant of a correlation submatrix by column indices."""
+    if indices.size == 0:
+        return 0.0
+    if indices.size == 1:
+        return 0.0
+    sub = C[np.ix_(indices, indices)]
+    return _correlation_log_det_from_matrix(sub)
 
 
 def cached_cdist(
