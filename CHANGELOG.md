@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.1] - 2026-06-25
+
+### Added
+
+- **`examples/benchmark_matrix.py`** — CLI timing matrix over discovery presets with TPR/FPR reporting (`--quick`, `--all`).
+
+### Changed
+
+- **README** — documents uv dev workflow, presets, performance knobs (`n_jobs`, `use_cache`), and the distinction between interactive defaults and `reproduction` settings.
+- **`discover_network` docstring** — explains default parameters vs validated presets.
+- **Gaussian MI/CMI** — single `cached_corrcoef` call per evaluation with submatrix log-determinants (fewer redundant `corrcoef` passes).
+- **Geometric k-NN entropy** — vectorized neighbor indexing and distance accumulation.
+- **Parallel shuffle tests** — `functools.partial` binding and tuned `chunksize` for `ThreadPoolExecutor.map`.
+
 ## [1.2.0] - 2026-06-25
 
 ### Added
