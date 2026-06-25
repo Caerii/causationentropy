@@ -1,11 +1,16 @@
 import warnings
 
 import numpy as np
-from scipy.spatial.distance import cdist
 from scipy.special import digamma
 
+from causationentropy.core.information.distance_cache import (
+    cached_cdist,
+    cached_detcorr,
+    supports_kd_tree,
+    tree_knn_distances,
+    tree_neighbors_within_distance,
+)
 from causationentropy.core.information.entropy import geometric_knn_entropy, kde_entropy
-from causationentropy.core.linalg import correlation_log_determinant
 
 
 def gaussian_mutual_information(X, Y):
@@ -51,9 +56,9 @@ def gaussian_mutual_information(X, Y):
     and may underestimate the true mutual information.
     """
 
-    SX = correlation_log_determinant(X)
-    SY = correlation_log_determinant(Y)
-    SXY = correlation_log_determinant(np.hstack((X, Y)))
+    SX = cached_detcorr(X)
+    SY = cached_detcorr(Y)
+    SXY = cached_detcorr(np.hstack((X, Y)))
 
     mi = 0.5 * (SX + SY - SXY)
     return mi
@@ -106,7 +111,7 @@ def kde_mutual_information(X, Y, bandwidth="silverman", kernel="gaussian"):
     return mi
 
 
-def knn_mutual_information(X, Y, metric="euclidean", k=1):
+def knn_mutual_information(X, Y, metric="euclidean", k=1, kd_tree=True):
     r"""
     Estimate mutual information using k-nearest neighbor (KSG) method.
 
@@ -131,6 +136,8 @@ def knn_mutual_information(X, Y, metric="euclidean", k=1):
         Distance metric for neighborhood calculations.
     k : int, default=1
         Number of nearest neighbors to consider.
+    kd_tree : bool, default=True
+        Use spatial trees for supported metrics.
 
     Returns
     -------
@@ -155,21 +162,22 @@ def knn_mutual_information(X, Y, metric="euclidean", k=1):
     .. [1] Kraskov, A., Stögbauer, H., Grassberger, P. Estimating mutual information.
            Physical Review E 69, 066138 (2004).
     """
-    # construct the joint space
     n = X.shape[0]
     JS = np.column_stack((X, Y))
 
-    # Find the K^th smallest distance in the joint space
-    D = np.sort(cdist(JS, JS, metric=metric), axis=1)[:, k]
-    epsilon = D
+    if kd_tree and supports_kd_tree(metric):
+        distances_js, _ = tree_knn_distances(JS, k=k, metric=metric)
+        epsilon = distances_js[:, k - 1]
+        nx = tree_neighbors_within_distance(X, epsilon, metric=metric)
+        ny = tree_neighbors_within_distance(Y, epsilon, metric=metric)
+    else:
+        D = np.sort(cached_cdist(JS, metric=metric), axis=1)[:, k]
+        epsilon = D
+        Dx = cached_cdist(X, metric=metric)
+        nx = np.sum(Dx < epsilon[:, None], axis=1) - 1
+        Dy = cached_cdist(Y, metric=metric)
+        ny = np.sum(Dy < epsilon[:, None], axis=1) - 1
 
-    # Count neighbors within epsilon in marginal spaces
-    Dx = cdist(X, X, metric=metric)
-    nx = np.sum(Dx < epsilon[:, None], axis=1) - 1
-    Dy = cdist(Y, Y, metric=metric)
-    ny = np.sum(Dy < epsilon[:, None], axis=1) - 1
-
-    # KSG Estimation formula
     I1a = digamma(k)
     I1b = digamma(n)
     I1 = I1a + I1b
@@ -178,7 +186,7 @@ def knn_mutual_information(X, Y, metric="euclidean", k=1):
     return mi
 
 
-def geometric_knn_mutual_information(X, Y, metric="euclidean", k=1):
+def geometric_knn_mutual_information(X, Y, metric="euclidean", k=1, kd_tree=True):
     """
     Estimate mutual information using geometric k-nearest neighbor method.
 
@@ -223,9 +231,9 @@ def geometric_knn_mutual_information(X, Y, metric="euclidean", k=1):
     .. [1] Lord, W.M., Sun, J., Bollt, E.M. Geometric k-nearest neighbor estimation of
            entropy and mutual information. Chaos 28, 033113 (2018).
     """
-    Xdist = cdist(X, X, metric=metric)
-    Ydist = cdist(Y, Y, metric=metric)
-    XYdist = cdist(np.hstack((X, Y)), np.hstack((X, Y)), metric=metric)
+    Xdist = cached_cdist(X, metric=metric)
+    Ydist = cached_cdist(Y, metric=metric)
+    XYdist = cached_cdist(np.hstack((X, Y)), metric=metric)
 
     HX = geometric_knn_entropy(X, Xdist, k)
     HY = geometric_knn_entropy(Y, Ydist, k)

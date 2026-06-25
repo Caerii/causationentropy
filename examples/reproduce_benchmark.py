@@ -33,6 +33,12 @@ def _synthetic_data(preset: str, seed: int, n: int, T: int):
     G_true = nx.erdos_renyi_graph(n, p, seed=seed, directed=True)
     if preset.startswith("poisson"):
         data, _ = poisson_coupled_oscillators(n=n, T=T, seed=seed, G=G_true)
+    elif preset.startswith("logistic"):
+        from causationentropy.datasets.synthetic import logisic_dynamics
+
+        data, adjacency = logisic_dynamics(n=n, t=T, seed=seed)
+        G_true = nx.from_numpy_array(adjacency, create_using=nx.DiGraph)
+        return data, G_true
     else:
         data, _ = linear_stochastic_gaussian_process(
             rho=0.7, n=n, T=T, seed=seed, G=G_true

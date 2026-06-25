@@ -1,7 +1,13 @@
 import numpy as np
-from scipy.spatial.distance import cdist
 from scipy.special import digamma
 
+from causationentropy.core.information.distance_cache import (
+    cached_cdist,
+    cached_detcorr,
+    supports_kd_tree,
+    tree_knn_distances,
+    tree_neighbors_within_distance,
+)
 from causationentropy.core.information.entropy import (
     geometric_knn_entropy,
     kde_entropy,
@@ -67,15 +73,10 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
     if Z is None:
         return gaussian_mutual_information(X, Y)
 
-    def _detcorr(A):
-        C = np.corrcoef(A.T)
-        # For 1D input, corrcoef returns scalar 1.0, and log(1.0) = 0.0
-        return 0.0 if np.ndim(C) == 0 else np.linalg.slogdet(C)[1]
-
-    SZ = _detcorr(Z)
-    SXZ = _detcorr(np.hstack((X, Z)))
-    SYZ = _detcorr(np.hstack((Y, Z)))
-    SXYZ = _detcorr(np.hstack((X, Y, Z)))
+    SZ = cached_detcorr(Z)
+    SXZ = cached_detcorr(np.hstack((X, Z)))
+    SYZ = cached_detcorr(np.hstack((Y, Z)))
+    SXYZ = cached_detcorr(np.hstack((X, Y, Z)))
 
     cmi = 0.5 * (SXZ + SYZ - SZ - SXYZ)
     return cmi
@@ -139,7 +140,7 @@ def kde_conditional_mutual_information(
     return I
 
 
-def knn_conditional_mutual_information(X, Y, Z, metric="minkowski", k=1):
+def knn_conditional_mutual_information(X, Y, Z, metric="minkowski", k=1, kd_tree=True):
     """
     Estimate conditional mutual information using k-nearest neighbor method.
 
@@ -191,29 +192,39 @@ def knn_conditional_mutual_information(X, Y, Z, metric="minkowski", k=1):
            Physical Review E 69, 066138 (2004).
     """
     if Z is None:
-        return knn_mutual_information(X, Y, metric=metric, k=k)
+        return knn_mutual_information(X, Y, metric=metric, k=k, kd_tree=kd_tree)
     else:
         JS = np.column_stack((X, Y, Z))
-        # Find the K-th smallest distance in the joint space
-        if metric == "minkowski":
-            D = np.sort(cdist(JS, JS, metric=metric, p=k + 1), axis=1)[:, k]
+        if kd_tree and supports_kd_tree(metric) and metric != "minkowski":
+            distances_js, _ = tree_knn_distances(JS, k=k, metric=metric)
+            epsilon = distances_js[:, k - 1]
+            nxz = tree_neighbors_within_distance(
+                np.column_stack((X, Z)), epsilon, metric=metric
+            )
+            nyz = tree_neighbors_within_distance(
+                np.column_stack((Y, Z)), epsilon, metric=metric
+            )
+            nz = tree_neighbors_within_distance(Z, epsilon, metric=metric)
         else:
-            D = np.sort(cdist(JS, JS, metric=metric), axis=1)[:, k]
-        epsilon = D
-        # Count neighbors within epsilon in marginal spaces
-        Dxz = cdist(np.column_stack((X, Z)), np.column_stack((X, Z)), metric=metric)
-        nxz = np.sum(Dxz < epsilon[:, None], axis=1) - 1
-        Dyz = cdist(np.column_stack((Y, Z)), np.column_stack((Y, Z)), metric=metric)
-        nyz = np.sum(Dyz < epsilon[:, None], axis=1) - 1
-        Dz = cdist(Z, Z, metric=metric)
-        nz = np.sum(Dz < epsilon[:, None], axis=1) - 1
+            if metric == "minkowski":
+                D = np.sort(cached_cdist(JS, metric=metric, p=k + 1), axis=1)[:, k]
+            else:
+                D = np.sort(cached_cdist(JS, metric=metric), axis=1)[:, k]
+            epsilon = D
+            Dxz = cached_cdist(np.column_stack((X, Z)), metric=metric)
+            nxz = np.sum(Dxz < epsilon[:, None], axis=1) - 1
+            Dyz = cached_cdist(np.column_stack((Y, Z)), metric=metric)
+            nyz = np.sum(Dyz < epsilon[:, None], axis=1) - 1
+            Dz = cached_cdist(Z, metric=metric)
+            nz = np.sum(Dz < epsilon[:, None], axis=1) - 1
 
-        # VP Estimation formula
         I = digamma(k) - np.mean(digamma(nxz + 1) + digamma(nyz + 1) - digamma(nz + 1))
         return I
 
 
-def geometric_knn_conditional_mutual_information(X, Y, Z, metric="euclidean", k=1):
+def geometric_knn_conditional_mutual_information(
+    X, Y, Z, metric="euclidean", k=1, kd_tree=True
+):
     """
     Estimate conditional mutual information using geometric k-nearest neighbor method.
 
@@ -263,11 +274,13 @@ def geometric_knn_conditional_mutual_information(X, Y, Z, metric="euclidean", k=
     """
 
     if Z is None:
-        return geometric_knn_mutual_information(X, Y)
-    YZdist = cdist(np.hstack((Y, Z)), np.hstack((Y, Z)), metric=metric)
-    XZdist = cdist(np.hstack((X, Z)), np.hstack((X, Z)), metric=metric)
-    XYZdist = cdist(np.hstack((X, Y, Z)), np.hstack((X, Y, Z)), metric=metric)
-    Zdist = cdist(Z, Z, metric=metric)
+        return geometric_knn_mutual_information(
+            X, Y, metric=metric, k=k, kd_tree=kd_tree
+        )
+    YZdist = cached_cdist(np.hstack((Y, Z)), metric=metric)
+    XZdist = cached_cdist(np.hstack((X, Z)), metric=metric)
+    XYZdist = cached_cdist(np.hstack((X, Y, Z)), metric=metric)
+    Zdist = cached_cdist(Z, metric=metric)
     HZ = geometric_knn_entropy(Z, Zdist, k)
     HXZ = geometric_knn_entropy(np.hstack((X, Z)), XZdist, k)
     HYZ = geometric_knn_entropy(np.hstack((Y, Z)), YZdist, k)
@@ -379,6 +392,7 @@ def conditional_mutual_information(
     k=6,
     bandwidth="silverman",
     kernel="gaussian",
+    kd_tree=True,
 ):
     """
     Compute conditional mutual information using specified estimation method.
@@ -483,10 +497,14 @@ def conditional_mutual_information(
         )
 
     elif method == "knn":
-        cmi = knn_conditional_mutual_information(X, Y, Z, metric=metric, k=k)
+        cmi = knn_conditional_mutual_information(
+            X, Y, Z, metric=metric, k=k, kd_tree=kd_tree
+        )
 
     elif method == "geometric_knn":
-        cmi = geometric_knn_conditional_mutual_information(X, Y, Z, metric=metric, k=k)
+        cmi = geometric_knn_conditional_mutual_information(
+            X, Y, Z, metric=metric, k=k, kd_tree=kd_tree
+        )
 
     elif method == "poisson":
         cmi = poisson_conditional_mutual_information(X, Y, Z)

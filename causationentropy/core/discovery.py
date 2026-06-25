@@ -6,7 +6,6 @@ version = 1.1.0
 
 import copy
 import os
-import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Optional, Tuple, Union
 
@@ -18,6 +17,13 @@ from tqdm import tqdm
 
 from causationentropy.core.information.conditional_mutual_information import (
     conditional_mutual_information,
+)
+from causationentropy.core.information.distance_cache import (
+    clear_caches,
+    configure_cache_for_discovery,
+)
+from causationentropy.core.information.mutual_information import (
+    gaussian_mutual_information,
 )
 from causationentropy.core.presets import apply_preset_to_params
 
@@ -47,6 +53,7 @@ def discover_network(
     seed: int = 42,
     verbose: bool = False,
     show_progress: bool = True,
+    use_cache: bool = True,
 ) -> nx.MultiDiGraph:
     r"""
     Infer a causal graph via Optimal Causation Entropy (oCSE).
@@ -132,6 +139,9 @@ def discover_network(
         If True, print a status line for each target variable.
     show_progress : bool, default=True
         If True, display a progress bar over target variables.
+    use_cache : bool, default=True
+        Enable distance-matrix and correlation-determinant caches for k-NN,
+        geometric k-NN, and Gaussian estimators.
 
     Returns
     -------
@@ -232,6 +242,15 @@ def discover_network(
     T, n = series.shape
     if T <= max_lag + 2:
         raise ValueError("Time series too short for chosen max_lag.")
+
+    if use_cache:
+        configure_cache_for_discovery(
+            (T - max_lag, n),
+            max_lag=max_lag,
+            information_method=information,
+        )
+    else:
+        clear_caches()
 
     indices = np.arange(max_lag, T - 1)
     # Step 1: Create lagged predictors and corresponding labels
@@ -542,18 +561,19 @@ def information_lasso_optimal_causation_entropy(
 
     Notes
     -----
-    This is a simplified implementation that delegates to LASSO. Future versions
-    will incorporate information-theoretic weighting into the regularization.
+    Predictors are weighted by the square root of their Gaussian mutual information
+    with the target before LASSO selection. This emphasizes predictors with stronger
+    linear information content while retaining LASSO sparsity.
     """
-    warnings.warn(
-        "information_lasso currently delegates to lasso_optimal_causation_entropy; "
-        "information-theoretic weighting is not yet implemented.",
-        UserWarning,
-        stacklevel=2,
+    weights = np.ones(X.shape[1], dtype=float)
+    for j in range(X.shape[1]):
+        mi = gaussian_mutual_information(X[:, [j]], Y)
+        weights[j] = np.sqrt(max(float(mi), 1e-12))
+    X_weighted = X * weights
+    selected = lasso_optimal_causation_entropy(
+        X_weighted, Y, rng, criterion, max_lambda, cross_val
     )
-
-    # This is a simplified implementation - needs proper information-theoretic weighting
-    return lasso_optimal_causation_entropy(X, Y, rng, criterion, max_lambda, cross_val)
+    return selected
 
 
 def lasso_optimal_causation_entropy(

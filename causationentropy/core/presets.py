@@ -202,7 +202,17 @@ DISCOVERY_PRESETS: Dict[str, DiscoveryPreset] = {
         "alpha_backward": 0.05,
         "n_shuffles": 1000,
         "n_jobs": 1,
-        "description": "LASSO baseline (currently equivalent to lasso; see method docstring).",
+        "description": "MI-weighted LASSO baseline for high-dimensional screening.",
+    },
+    "logistic_chaos": {
+        "method": "standard",
+        "information": "gaussian",
+        "max_lag": 1,
+        "alpha_forward": 0.05,
+        "alpha_backward": 0.05,
+        "n_shuffles": 500,
+        "n_jobs": -1,
+        "description": "Nonlinear logistic-map network discovery (exploratory).",
     },
     "demo": {
         "method": "standard",
