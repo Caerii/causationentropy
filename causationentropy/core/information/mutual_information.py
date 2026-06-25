@@ -55,6 +55,13 @@ def gaussian_mutual_information(X, Y):
 
     For non-Gaussian data, this estimator captures only linear dependencies
     and may underestimate the true mutual information.
+
+    Implementation note
+    -------------------
+    We stack ``[X | Y]`` into one matrix, compute a single cached correlation
+    matrix ``C``, and read off the marginal and joint log-determinants as
+    principal minors. This is algebraically identical to three separate
+    ``corrcoef`` calls but avoids redundant work during forward selection.
     """
 
     kx, ky = X.shape[1], Y.shape[1]
@@ -62,6 +69,7 @@ def gaussian_mutual_information(X, Y):
         return 0.0
     W = np.hstack((X, Y))
     C = cached_corrcoef(W)
+    # Column blocks: X occupies [:kx], Y occupies [kx:kx+ky].
     ix = np.arange(kx)
     iy = np.arange(kx, kx + ky)
     all_cols = np.arange(C.shape[0])

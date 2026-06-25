@@ -59,7 +59,15 @@ def hyperellipsoid_check(svd_Yi, Z_i):
 
 
 def _hyperellipsoid_inside(svd_Yi, Z_i):
-    """Return boolean mask for rows of Z_i inside the unit hyperellipsoid."""
+    r"""Test which neighbor displacement vectors lie inside a unit hyperellipsoid.
+
+    Given the SVD :math:`Y_i = U \Sigma V^\top` of the centered neighbor cloud
+    and displacement vectors :math:`Z_i` (each row points from the base sample
+    to one neighbor), we map each row into ellipsoid coordinates via
+    :math:`Z_i V^\top \Sigma^{-1}` and accept those whose squared norm is at
+    most one. This is the batch form of the check used in Lord–Sun–Bollt's
+    geometric k-NN correction.
+    """
     _, S, Vt = svd_Yi
     r = len(S)
     transformed = (Z_i @ Vt.T[:, :r]) / S
@@ -67,7 +75,13 @@ def _hyperellipsoid_inside(svd_Yi, Z_i):
 
 
 def _singular_ratio_term(sing_Yi):
-    """Sum of log singular-value ratios relative to the leading singular value."""
+    r"""Accumulate log ratios of singular values to the leading singular value.
+
+    When the local neighbor cloud is nearly rank-deficient, the ratio
+    :math:`\sigma_\ell / \sigma_1` becomes small; we take :math:`\log` of each
+    ratio (with a floor at :math:`10^{-12}`) and sum. This term appears in the
+    geometric correction that adjusts standard k-NN entropy for local curvature.
+    """
     if len(sing_Yi) == 0 or sing_Yi[0] <= 1e-12:
         return 0.0
     ratios = sing_Yi / sing_Yi[0]
@@ -174,15 +188,22 @@ def geometric_knn_entropy(X, Xdist, k=1):
            entropy and mutual information. Chaos 28, 033113 (2018).
     """
     N, d = X.shape
+
+    # Step 1: for each sample, identify its k nearest neighbors (exclude self at index 0).
     Xknn = np.argsort(Xdist, axis=1)[:, 1 : k + 1]
+
+    # Step 2: baseline entropy term from sample size, dimension, and k-NN radii.
     H_X = np.log(N) + np.log(np.pi ** (d / 2) / gamma(1 + d / 2))
 
     rows = np.arange(N)
     dists = Xdist[rows, Xknn[:, k - 1]]
+    # Avoid log(0) when duplicate points sit at zero distance from their k-th neighbor.
     log_distances = np.where(dists > 1e-12, np.log(dists), -12.0)
     H_X += d / N * np.sum(log_distances)
 
-    # Compute geometric correction term with safety checks
+    # Step 3: geometric correction — one local neighborhood at a time.
+    # Y_i centers the base point together with its neighbors; Z_i holds the
+    # displacement vectors from the base point to each neighbor.
     successful_corrections = []
     failed_count = 0
     for i in range(N):
@@ -195,7 +216,9 @@ def geometric_knn_entropy(X, Xdist, k=1):
             svd_Yi = np.linalg.svd(Y_i)
             sing_Yi = svd_Yi[1]
 
+            # Count how many neighbor directions fall inside the local hyperellipsoid.
             hyperellipsoid_sum = int(_hyperellipsoid_inside(svd_Yi, Z_i).sum())
+            # Avoid log(0) in the hyperellipsoid term when no neighbors qualify.
             log_hyper = -np.log(max(1, hyperellipsoid_sum))
             sing_ratio_sum = _singular_ratio_term(sing_Yi)
 
@@ -206,6 +229,7 @@ def geometric_knn_entropy(X, Xdist, k=1):
                 failed_count += 1
 
         except (np.linalg.LinAlgError, ValueError):
+            # Rank-deficient or numerically unstable neighborhoods are skipped.
             failed_count += 1
 
     if failed_count > 0:

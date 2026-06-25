@@ -1,7 +1,7 @@
 """
 Author: Kevin Slote
 Email: kslote@clarkson.edu
-version = 1.2.2
+version = 1.2.3
 """
 
 import copy
@@ -960,6 +960,13 @@ def _null_cmi_for_permutation(
     k_means,
     bandwidth,
 ):
+    """Evaluate CMI under one permutation of the predictor rows.
+
+    Under the null hypothesis, ``X`` is exchangeable with respect to ``(Y, Z)``;
+    we therefore shuffle only the rows of ``X`` while leaving ``Y`` and ``Z``
+    in temporal alignment. Each call contributes one draw to the null distribution
+    used by :func:`shuffle_test`.
+    """
     X_perm = X[perm, :]
     return conditional_mutual_information(
         X_perm,
@@ -1066,6 +1073,9 @@ def shuffle_test(
     rng = np.random.default_rng(rng)
     n_workers = _resolve_n_jobs(n_jobs)
     permutations = [rng.permutation(len(X)) for _ in range(n_shuffles)]
+
+    # Bind everything except the permuted index vector once; each null replicate
+    # only shuffles rows of X while Y and Z stay aligned in time.
     null_fn = partial(
         _null_cmi_for_permutation,
         X=X,
@@ -1080,6 +1090,7 @@ def shuffle_test(
     if n_workers == 1:
         null_cmi = np.array([null_fn(perm) for perm in permutations])
     else:
+        # Chunk size trades thread scheduling overhead against latency to first result.
         chunksize = max(1, n_shuffles // (n_workers * 8))
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             null_cmi = np.array(

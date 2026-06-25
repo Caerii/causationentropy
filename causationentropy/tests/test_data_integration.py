@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Integration test for all entropy methods in causal discovery.
+Integration tests for causal discovery across all supported information estimators.
 
-Each test delegates to :mod:`causationentropy.core.integration_benchmarks`
-so pytest names stay aligned with named discovery presets.
+These tests are the reproduction gate for the library: each one generates
+synthetic data whose distributional assumptions match a particular information
+estimator, runs :func:`~causationentropy.discover_network` with a named preset,
+and checks that the recovered graph achieves the true-positive and false-positive
+rates recorded in :mod:`causationentropy.core.integration_benchmarks`.
+
+The test bodies are intentionally thin. All shared logic (data generation,
+preset lookup, TPR/FPR evaluation) lives in the benchmark matrix so this file
+reads as a catalog of *what* we validate, not *how* the plumbing works.
 """
 
 import warnings
@@ -23,71 +30,92 @@ pytestmark = pytest.mark.integration
 
 
 def test_standard_gaussian():
+    """Standard oCSE + Gaussian CMI on linear VAR data (preset: reproduction)."""
     assert_integration_benchmark("test_standard_gaussian")
 
 
 def test_alternative_gaussian():
+    """Alternative oCSE + Gaussian CMI (preset: gaussian_alternative)."""
     assert_integration_benchmark("test_alternative_gaussian")
 
 
 def test_standard_knn():
+    """Standard oCSE + k-NN CMI, Euclidean metric (preset: knn_standard)."""
     assert_integration_benchmark("test_standard_knn")
 
 
 def test_alternative_knn():
+    """Alternative oCSE + k-NN with high k and many shuffles (preset: knn_alternative)."""
     assert_integration_benchmark("test_alternative_knn")
 
 
 def test_minkowski_standard_knn():
+    """Standard k-NN CMI with Minkowski metric (preset: knn_minkowski)."""
     assert_integration_benchmark("test_minkowski_standard_knn")
 
 
 def test_standard_geometric_knn():
+    """Standard oCSE + geometric k-NN CMI (preset: geometric_knn_standard)."""
     assert_integration_benchmark("test_standard_geometric_knn")
 
 
 def test_standard_kde():
+    """Standard oCSE + KDE CMI, Silverman bandwidth (preset: kde_standard)."""
     assert_integration_benchmark("test_standard_kde")
 
 
 def test_information_lasso():
+    """MI-weighted LASSO screening baseline (preset: information_lasso)."""
     assert_integration_benchmark("test_information_lasso")
 
 
 def test_lasso():
+    """Pure LASSO baseline without permutation selection (preset: lasso)."""
     assert_integration_benchmark("test_lasso")
 
 
 def test_standard_poisson():
+    """Standard oCSE + Poisson CMI on count data (preset: poisson_standard)."""
     assert_integration_benchmark("test_standard_poisson")
 
 
 def test_alternative_poisson():
+    """Alternative oCSE + Poisson CMI (preset: poisson_alternative)."""
     assert_integration_benchmark("test_alternative_poisson")
 
 
 def test_alternative_geometric_knn():
+    """Alternative oCSE + geometric k-NN (preset: geometric_knn_alternative)."""
     assert_integration_benchmark("test_alternative_geometric_knn")
 
 
 def test_alternative_kde():
+    """Alternative oCSE + KDE CMI (preset: kde_alternative)."""
     assert_integration_benchmark("test_alternative_kde")
 
 
 def test_kde_scott_bandwidth():
+    """KDE CMI with Scott bandwidth (preset: kde_scott)."""
     assert_integration_benchmark("test_kde_scott_bandwidth")
 
 
 def test_knn_chebyshev_metric():
+    """k-NN CMI with Chebyshev metric (preset: knn_chebyshev)."""
     assert_integration_benchmark("test_knn_chebyshev_metric")
 
 
 def test_knn_manhattan_metric():
+    """k-NN CMI with Manhattan (cityblock) metric (preset: knn_manhattan)."""
     assert_integration_benchmark("test_knn_manhattan_metric")
 
 
 def test_parameter_variations():
-    """Ad-hoc parameter sweep (not tied to a single preset)."""
+    """Ad-hoc parameter sweep — not tied to a single named preset.
+
+    This test explores sensitivity to ``max_lag`` and ``k_means`` on a smaller
+    graph. It remains inline (rather than matrix-backed) because it exercises
+    two custom configurations in one function rather than one validated preset.
+    """
     T = 150
     rho = 0.8
     n_nodes = 4
@@ -99,6 +127,7 @@ def test_parameter_variations():
         rho=rho, n=n_nodes, T=T, seed=seed, G=G_true
     )
 
+    # Higher max_lag: more predictors enter the conditioning sets.
     G_discovered = discover_network(
         data=data,
         method="standard",
@@ -111,6 +140,7 @@ def test_parameter_variations():
     B = nx.to_numpy_array(G_discovered)
     A_true = nx.to_numpy_array(G_true)
 
+    # The matrices look binarized, but they are not.
     A_bin = (A_true > 0).astype(int)
     B_bin = (B > 0).astype(int)
     tpr, fpr = Compute_TPR_FPR(A_bin, B_bin)
@@ -118,6 +148,7 @@ def test_parameter_variations():
     assert tpr >= 0.9
     assert fpr <= 0.1
 
+    # Higher k for k-NN: smoother local density estimates, often more conservative.
     G_discovered = discover_network(
         data=data,
         method="standard",

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.3] - 2026-06-25
+
+### Changed
+
+- **Documentation pass** — expanded module and function docstrings across
+  ``integration_benchmarks``, ``distance_cache``, ``entropy``, Gaussian MI/CMI,
+  ``presets``, and ``discovery`` with explanatory prose and preserved inline
+  comments that walk through algorithms step by step.
+- **Integration tests** — each pytest function now documents which preset it
+  validates; ``test_parameter_variations`` retains its original illustrative
+  comments.
+
 ## [1.2.2] - 2026-06-25
 
 ### Added

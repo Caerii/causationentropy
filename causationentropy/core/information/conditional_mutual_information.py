@@ -70,6 +70,13 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
 
     For non-Gaussian data, this estimator provides a lower bound on the
     true conditional mutual information.
+
+    Implementation note
+    -------------------
+    Stack ``[X | Y | Z]`` once, cache ``corrcoef(W)``, and extract the four
+    log-determinants required by the formula from column-index blocks. The
+    index layout is fixed by concatenation order so every term refers to the
+    same underlying correlation matrix.
     """
     if Z is None:
         return gaussian_mutual_information(X, Y)
@@ -77,6 +84,7 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
     kx, ky, kz = X.shape[1], Y.shape[1], Z.shape[1]
     W = np.hstack((X, Y, Z))
     C = cached_corrcoef(W)
+    # Partition columns: X | Y | Z in concatenation order.
     ix = np.arange(kx)
     iy = np.arange(kx, kx + ky)
     iz = np.arange(kx + ky, kx + ky + kz)
@@ -84,6 +92,7 @@ def gaussian_conditional_mutual_information(X, Y, Z=None):
     iyz = np.concatenate((iy, iz))
     ixyz = np.concatenate((ix, iy, iz))
 
+    # I(X;Y|Z) = 1/2 [ log|XZ| + log|YZ| - log|Z| - log|XYZ| ] in correlation form.
     cmi = 0.5 * (
         correlation_log_det_subset(C, ixz)
         + correlation_log_det_subset(C, iyz)

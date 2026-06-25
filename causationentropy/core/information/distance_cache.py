@@ -1,4 +1,16 @@
-"""Distance-matrix and correlation-determinant caches for information estimators."""
+"""Distance-matrix and correlation caches for information estimators.
+
+Causal discovery repeatedly evaluates conditional mutual information on nearly
+the same column blocks of lagged data. Recomputing full pairwise distance
+matrices or correlation determinants at every forward/backward step would waste
+work. This module memoizes those heavy intermediates behind small LRU-style
+caches keyed by the raw array bytes (and metric name when relevant).
+
+The caches are intentionally process-local and cleared when
+:func:`configure_cache_for_discovery` runs at the start of a
+:func:`~causationentropy.core.discovery.discover_network` call, so memory use
+scales with one discovery job rather than growing without bound across sessions.
+"""
 
 from __future__ import annotations
 
@@ -115,7 +127,12 @@ def cached_detcorr(A: np.ndarray) -> float:
 
 
 def _correlation_log_det_from_matrix(C: np.ndarray) -> float:
-    """Signed log-determinant of a correlation matrix with singular fallback."""
+    """Signed log-determinant of a correlation matrix with singular fallback.
+
+    Near-singular correlation matrices arise when variables are collinear; we
+    return a large negative sentinel rather than ``-inf`` so downstream CMI
+    formulas remain finite and comparable.
+    """
     if C.ndim == 0:
         return 0.0
     sign, logdet = np.linalg.slogdet(C)
@@ -125,7 +142,12 @@ def _correlation_log_det_from_matrix(C: np.ndarray) -> float:
 
 
 def cached_corrcoef(A: np.ndarray) -> np.ndarray:
-    """Cached full correlation matrix for a data block."""
+    """Return the full correlation matrix of ``A``, computing it at most once.
+
+    Gaussian MI and CMI need several log-determinants of overlapping column
+    subsets. Building :func:`numpy.corrcoef` once and extracting principal
+    minors avoids redundant passes over the same standardized data.
+    """
     A = np.asarray(A)
     if A.shape[1] == 0:
         return np.zeros((0, 0))
@@ -140,7 +162,20 @@ def cached_corrcoef(A: np.ndarray) -> np.ndarray:
 
 
 def correlation_log_det_subset(C: np.ndarray, indices: np.ndarray) -> float:
-    """Log-determinant of a correlation submatrix by column indices."""
+    """Log-determinant of the correlation submatrix on selected columns.
+
+    Parameters
+    ----------
+    C : ndarray of shape (p, p)
+        Full correlation matrix (typically from :func:`cached_corrcoef`).
+    indices : ndarray of int
+        Column indices defining the variable block whose determinant we need.
+
+    Notes
+    -----
+    Scalar blocks (``|indices| == 1``) have correlation determinant 1 by
+    convention, so we return ``0.0`` in log space.
+    """
     if indices.size == 0:
         return 0.0
     if indices.size == 1:

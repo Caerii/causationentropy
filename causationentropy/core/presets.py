@@ -1,4 +1,12 @@
-"""Validated discovery presets from integration benchmarks."""
+"""Validated discovery presets from integration benchmarks.
+
+Each preset is a named dictionary of ``discover_network`` keyword arguments that
+were tuned until the corresponding integration test in
+``test_data_integration.py`` met its TPR/FPR gate. Presets exist so users can
+reproduce paper-style results without copying long parameter lists, and so the
+library can distinguish **interactive defaults** (fast, ``demo``) from
+**validated reproduction settings** (``reproduction``, ``knn_standard``, etc.).
+"""
 
 from __future__ import annotations
 
