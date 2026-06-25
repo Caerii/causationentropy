@@ -54,6 +54,36 @@ The typical workflow for adding new methods:
    integration-test tuned settings. See `causationentropy/core/presets.py` and
    `examples/reproduce_benchmark.py`.
 
+4. **Integration test ↔ preset matrix**: `causationentropy/core/integration_benchmarks.py`
+   maps each pytest name in `test_data_integration.py` to a named preset. Run a single
+   benchmark locally:
+
+   ```bash
+   uv run python -c "from causationentropy.core.integration_benchmarks import assert_integration_benchmark; assert_integration_benchmark('test_standard_gaussian')"
+   ```
+
+   | Integration test | Preset |
+   |---|---|
+   | `test_standard_gaussian` | `reproduction` |
+   | `test_alternative_gaussian` | `gaussian_alternative` |
+   | `test_standard_knn` | `knn_standard` |
+   | `test_alternative_knn` | `knn_alternative` |
+   | `test_minkowski_standard_knn` | `knn_minkowski` |
+   | `test_standard_geometric_knn` | `geometric_knn_standard` |
+   | `test_alternative_geometric_knn` | `geometric_knn_alternative` |
+   | `test_standard_kde` | `kde_standard` |
+   | `test_alternative_kde` | `kde_alternative` |
+   | `test_kde_scott_bandwidth` | `kde_scott` |
+   | `test_knn_chebyshev_metric` | `knn_chebyshev` |
+   | `test_knn_manhattan_metric` | `knn_manhattan` |
+   | `test_standard_poisson` | `poisson_standard` |
+   | `test_alternative_poisson` | `poisson_alternative` |
+   | `test_lasso` | `lasso` |
+   | `test_information_lasso` | `information_lasso` |
+
+   `test_parameter_variations` is an ad-hoc sweep and is not preset-backed.
+   `test_logistic_dynamics_end_to_end` in `test_distance_cache.py` uses `logistic_chaos`.
+
 ## Implementing New Methods
 
 ### Code Style Requirement: No **kwargs

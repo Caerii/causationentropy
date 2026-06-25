@@ -114,3 +114,29 @@ def test_compute_tpr_fpr_off_diagonal_only():
     tpr, fpr = Compute_TPR_FPR(A, B)
     assert tpr == 1.0
     assert 0.0 <= fpr <= 1.0
+
+
+def test_integration_matrix_presets_exist():
+    from causationentropy.core.integration_benchmarks import (
+        INTEGRATION_BENCHMARKS,
+        list_integration_benchmarks,
+    )
+    from causationentropy.core.presets import get_discovery_preset
+
+    names = list_integration_benchmarks()
+    assert len(names) == len(INTEGRATION_BENCHMARKS)
+    assert "test_standard_gaussian" in names
+    for row in INTEGRATION_BENCHMARKS:
+        preset = get_discovery_preset(row["preset"])
+        assert preset["method"]
+        assert preset.get("information") or row["preset"] == "lasso"
+
+
+def test_integration_matrix_preset_for_gaussian_standard():
+    from causationentropy.core.integration_benchmarks import preset_for_integration_test
+    from causationentropy.core.presets import get_discovery_preset
+
+    assert preset_for_integration_test("test_standard_gaussian") == "reproduction"
+    alt = get_discovery_preset("gaussian_alternative")
+    assert alt["method"] == "alternative"
+    assert alt["alpha_forward"] == 0.01
