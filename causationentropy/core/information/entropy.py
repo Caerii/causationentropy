@@ -161,21 +161,12 @@ def geometric_knn_entropy(X, Xdist, k=1):
            entropy and mutual information. Chaos 28, 033113 (2018).
     """
     N, d = X.shape
-    Xknn = np.zeros((N, k), dtype=int)
-
-    for i in range(N):
-        Xknn[i, :] = np.argsort(Xdist[i, :])[1 : k + 1]
+    Xknn = np.argsort(Xdist, axis=1)[:, 1 : k + 1]
     H_X = np.log(N) + np.log(np.pi ** (d / 2) / gamma(1 + d / 2))
 
-    # Compute distance-based term with safety checks
-    log_distances = []
-    for i in range(N):
-        dist = l2dist(X[i, :], X[Xknn[i, k - 1], :])
-        if dist > 1e-12:  # Avoid log(0)
-            log_distances.append(np.log(dist))
-        else:
-            log_distances.append(-12.0)  # log(1e-12) as a reasonable lower bound
-
+    rows = np.arange(N)
+    dists = Xdist[rows, Xknn[:, k - 1]]
+    log_distances = np.where(dists > 1e-12, np.log(dists), -12.0)
     H_X += d / N * np.sum(log_distances)
 
     # Compute geometric correction term with safety checks
