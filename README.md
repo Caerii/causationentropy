@@ -38,10 +38,22 @@ pip install causationentropy
 ```
 
 ### Development Installation
+
+With [uv](https://docs.astral.sh/uv/) (recommended):
+
 ```bash
 git clone https://github.com/Center-For-Complex-Systems-Science/causationentropy.git
 cd causationentropy
-pip install -e .
+uv sync --group dev
+uv run pytest causationentropy/tests/ -m "not integration"
+```
+
+With pip:
+
+```bash
+git clone https://github.com/Center-For-Complex-Systems-Science/causationentropy.git
+cd causationentropy
+pip install -e ".[dev]"
 ```
 
 ##### Run the tests
@@ -50,14 +62,24 @@ pip install -e .
 python -m pytest causationentropy/tests/ --cov=causationentropy
 ```
 
-With overage loally:
+With coverage locally:
+
 ```bash
 python -m pytest causationentropy/tests/ --cov=causationentropy --cov-report=xml --cov-report=term-missing -v
 ```
 
+Paper-style integration benchmarks (slower):
+
+```bash
+pytest causationentropy/tests/test_data_integration.py -m integration
+```
+
 ### Basic Usage
 
+**Defaults vs presets:** `discover_network(data)` uses fast interactive defaults (`max_lag=5`, `n_shuffles=200`). Validated paper-style settings live in named presets — use `preset="reproduction"` for benchmarks or `preset="demo"` to match the defaults explicitly.
+
 Get the relationships as a Pandas data frame:
+
 ```python
 import pandas as pd
 from causationentropy import discover_network
@@ -66,8 +88,12 @@ from causationentropy.graph import network_to_dataframe
 # Load your time series data (variables as columns, time as rows)
 data = pd.read_csv('data.csv')
 
-# Discover causal network
-network = discover_network(data, method='standard', max_lag=5)
+# Interactive exploration (fast defaults)
+network = discover_network(data, preset="demo")
+
+# Or paper-style benchmark settings
+network = discover_network(data, preset="reproduction", show_progress=True)
+
 df = network_to_dataframe(network)
 df.head()
 ```
@@ -93,33 +119,43 @@ uv run python examples/reproduce_benchmark.py --list
 ```
 
 Plot the causal network:
+
 ```python
 from causationentropy import discover_network
 from causationentropy.core.plotting import plot_causal_network
 
-# Load your time series data (variables as columns, time as rows)
-data = pd.read_csv('data.csv')
-
-# Discover causal network
-network = discover_network(data, method='standard', max_lag=5)
+network = discover_network(data, preset="demo")
 fig, ax = plot_causal_network(network, save_path="network.png")
 ```
-**Note:** Application of this algorithm without optimizations is computationally intensive. When running this algorithm, please be patient. Optimizations of the algorithm are planned for a later release that leverage singular value decomposition and KD-Trees. However, these optimizations are not part of the original algorithm. Adding additional lags also contributes to additional performance degradations.
+
+### Performance
+
+Causal discovery is compute-intensive — most runtime is spent in permutation tests. The library includes several optimizations (enabled by default):
+
+- **`n_jobs=-1`** — parallel shuffle tests across CPU cores
+- **`use_cache=True`** — distance-matrix and correlation caches; KD-trees for k-NN estimators
+- **`preset="demo"`** — lower `n_shuffles` and higher `max_lag` for interactive use
+- **`preset="reproduction"`** — validated accuracy settings (`n_shuffles=1000`, `max_lag=1`)
+
+Increasing `max_lag` or `n_shuffles` scales cost roughly linearly. For large datasets, start with `preset="demo"` or reduce `n_shuffles` before running full reproduction presets.
 
 ### Advanced Configuration
 
 ```python
 from causationentropy import discover_network
 
-# Configure discovery parameters
 network = discover_network(
     data,
-    method='standard',          # 'standard', 'alternative', base lines: 'information_lasso', or 'lasso'
+    method='standard',          # 'standard', 'alternative', 'information_lasso', or 'lasso'
     information='gaussian',     # 'gaussian', 'knn', 'kde', 'geometric_knn', or 'poisson'
-    max_lag=5,                  # Maximum time lag to consider
-    alpha_forward=0.05,         # Forward selection significance
-    alpha_backward=0.05,        # Backward elimination significance
-    n_shuffles=200              # Permutation test iterations
+    max_lag=5,
+    alpha_forward=0.05,
+    alpha_backward=0.05,
+    n_shuffles=200,
+    n_jobs=-1,                  # parallel permutation tests
+    use_cache=True,             # distance / correlation caches
+    seed=42,
+    show_progress=True,
 )
 ```
 
@@ -130,24 +166,24 @@ from causationentropy.datasets import synthetic
 from causationentropy import discover_network
 
 rho = 0.7
-# Generate synthetic causal time series
 data, true_network = synthetic.linear_stochastic_gaussian_process(
     rho,
-    n=5, 
+    n=5,
 )
 
-# Discover network
-discovered = discover_network(data)
+discovered = discover_network(data, preset="reproduction")
 ```
 
 ## Key Features
 
 - **Multiple Algorithms**: Standard, alternative, information lasso, and lasso variants of oCSE
-- **Flexible Information Estimators**: Gaussian, k-NN, KDE, geometric k-NN, and Poisson methods  
+- **Flexible Information Estimators**: Gaussian, k-NN, KDE, geometric k-NN, and Poisson methods
 - **Statistical Rigor**: Permutation-based significance testing with comprehensive test coverage
+- **Named Presets**: 18 validated configurations from integration benchmarks
+- **Parallel Discovery**: Multi-core permutation tests and progress reporting
 - **Synthetic Data**: Built-in generators for testing and validation
 - **Visualization**: Network plotting and analysis tools
-  
+
 ## Mathematical Foundation
 
 The algorithm uses **conditional mutual information** to quantify causal relationships:
@@ -169,7 +205,7 @@ The algorithm implements a two-phase approach:
 - **[API Reference](https://causationentropy.readthedocs.io/en/latest/api/)**: Complete function and class documentation
 - **[User Guide](https://causationentropy.readthedocs.io/en/latest/user_guide/)**: Detailed tutorials and examples
 - **[Theory](https://causationentropy.readthedocs.io/en/latest/theory/)**: Mathematical background and algorithms
-- **Examples**: Check the `notebooks/` directory
+- **Examples**: Check the `notebooks/` and `examples/` directories
 - **Research Papers**: See the `theory glossary` in the [documentation](https://causationentropy.readthedocs.io/en/latest/theory/index.html)
 
 ### Local Documentation
