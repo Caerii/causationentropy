@@ -172,6 +172,14 @@ def discover_network(
     - Reducing max_lag for shorter time series
     - Using 'gaussian' information type for continuous data
     - Adjusting n_shuffles based on desired statistical precision
+    - Setting ``n_jobs=-1`` for parallel permutation tests
+    - Using ``preset="demo"`` for interactive exploration or ``preset="reproduction"``
+      for integration-test validated settings
+
+    **Default parameters vs presets:** Function defaults (``max_lag=5``,
+    ``n_shuffles=200``) prioritize fast interactive use and differ from the
+    validated ``reproduction`` preset (``max_lag=1``, ``n_shuffles=1000``).
+    Use :func:`list_presets` to browse all 18 named configurations.
 
     Examples
     --------
