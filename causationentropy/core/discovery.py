@@ -1,7 +1,7 @@
 """
 Author: Kevin Slote
 Email: kslote@clarkson.edu
-version = 1.2.10
+version = 1.2.11
 """
 
 import copy

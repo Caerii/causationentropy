@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.11] - 2026-06-25
+
+### Changed
+
+- **`poisson_entropy`** — batch Poisson PMF evaluation in blocks of 512 orders per
+  ``scipy.stats.poisson.pmf`` call (broadcast ``ks × lambdas``) instead of one
+  scalar PMF call per truncation step.
+
+### Added
+
+- **`_poisson_pmf_block`** — internal helper for vectorized PMF blocks.
+- **`test_poisson_pmf_block_matches_scalar_pmf`** — block vs per-order parity.
+
+### Notes (profile tier, ``n_jobs=1``, seed=42)
+
+- ``poisson_standard`` wall time: ~77s (1.2.9) → ~30s (1.2.10) → **~6.4s** (1.2.11)
+  at 30 shuffles; ``poisson_entropy`` exclusive time ~7s → ~1.2s.
+
 ## [1.2.10] - 2026-06-25
 
 ### Changed

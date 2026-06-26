@@ -244,6 +244,20 @@ def geometric_knn_entropy(X, Xdist, k=1):
     return H_X
 
 
+_POISSON_PMF_CHUNK = 512
+
+
+def _poisson_pmf_block(ks: np.ndarray, lambdas: np.ndarray) -> np.ndarray:
+    """Poisson PMF for integer orders ``ks`` and rate vector ``lambdas``.
+
+    Returns an array of shape ``(len(ks), len(lambdas))`` via one vectorized
+    ``scipy.stats.poisson.pmf`` call (broadcast ``ks[:, None]`` against
+    ``lambdas[None, :]``).
+    """
+    ks = np.asarray(ks, dtype=int)
+    return scipy.stats.poisson.pmf(ks[:, None], lambdas[None, :])
+
+
 def poisson_entropy(lambdas):
     r"""
     Estimate entropy for Poisson-distributed random variables.
@@ -276,6 +290,8 @@ def poisson_entropy(lambdas):
     This implementation:
 
     - Uses adaptive truncation based on cumulative probability mass
+    - Batches Poisson PMF evaluations in blocks of up to 512 orders per
+      ``scipy.stats.poisson.pmf`` call
     - Handles numerical stability by setting log(0) terms to zero
     - Returns real values even if complex arithmetic is used internally
 
@@ -290,26 +306,35 @@ def poisson_entropy(lambdas):
     """
     lambdas = np.abs(np.asarray(lambdas, dtype=float))
     scalar_input = lambdas.ndim == 0
-    lambdas = np.atleast_1d(lambdas)
+    lambdas = np.ravel(lambdas)
 
     p0 = np.exp(-lambdas)
     psum = p0.copy()
-    terms = [p0]
+    parts = [p0.reshape(1, -1)]
     small = 1.0
     k = 1
     max_lam = float(np.max(lambdas)) if lambdas.size else 0.0
 
-    while float(np.max(1.0 - psum)) > 1e-16 and small > 1e-75:
-        prob = scipy.stats.poisson.pmf(k, lambdas)
-        psum = psum + prob
-        terms.append(prob)
-        if k >= max_lam:
-            small = float(np.min(prob))
-        k += 1
-        if k > 100_000:
+    while float(np.max(1.0 - psum)) > 1e-16 and small > 1e-75 and k <= 100_000:
+        ks = np.arange(k, min(k + _POISSON_PMF_CHUNK, 100_001))
+        block = _poisson_pmf_block(ks, lambdas)
+        stop_at = block.shape[0]
+        for i in range(block.shape[0]):
+            k_curr = int(ks[i])
+            psum = psum + block[i]
+            if k_curr >= max_lam:
+                small = min(small, float(np.min(block[i])))
+            if not (float(np.max(1.0 - psum)) > 1e-16 and small > 1e-75):
+                stop_at = i + 1
+                break
+        if stop_at == 0:
             break
+        parts.append(block[:stop_at])
+        if stop_at < block.shape[0]:
+            break
+        k = int(ks[-1]) + 1
 
-    P = np.stack(terms, axis=0)
+    P = np.vstack(parts)
     with np.errstate(divide="ignore", invalid="ignore"):
         est_a = P * np.log(P)
         est_a = np.where(P > 0, est_a, 0.0)

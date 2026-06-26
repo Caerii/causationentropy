@@ -5,6 +5,7 @@ import warnings
 import networkx as nx
 import numpy as np
 import pytest
+import scipy.stats
 
 from causationentropy import discover_network
 from causationentropy.core.discovery import (
@@ -114,6 +115,18 @@ def test_tree_neighbors_within_distance_matches_dense():
     dense_counts = np.sum(dense < epsilon[:, None], axis=1) - 1
 
     np.testing.assert_allclose(tree_counts, dense_counts, rtol=0, atol=0)
+
+
+def test_poisson_pmf_block_matches_scalar_pmf():
+    """Batched PMF block must match per-order scipy calls."""
+    from causationentropy.core.information.entropy import _poisson_pmf_block
+
+    lambdas = np.array([0.5, 2.0, 7.0, 50.0])
+    ks = np.arange(0, 40)
+    block = _poisson_pmf_block(ks, lambdas)
+    for i, k in enumerate(ks):
+        expected = scipy.stats.poisson.pmf(k, lambdas)
+        np.testing.assert_allclose(block[i], expected, rtol=0, atol=0)
 
 
 def test_poisson_entropy_vectorized_regression():
