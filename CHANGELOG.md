@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.9] - 2026-06-25
+
+### Added
+
+- **`examples/profile_hotspots.py`** — empirical profiler with ``--tier profile|full``,
+  preset-aware ``n_shuffles``/``T`` caps, exclusive-time bucket summaries, and
+  optional ``--top-functions`` drill-down.
+
+### Notes (profile tier, ``n_jobs=1``, seed=42)
+
+Initial hotspot study on local hardware:
+
+- **Gaussian ``reproduction``** (~2s): log-det / correlation minors and
+  ``gaussian_conditional_mutual_information_batch`` dominate; backward elimination,
+  edge re-labeling, and shuffle tests are negligible at this tier.
+- **k-NN ``knn_standard``** (~200s at ``T=100``, 10 shuffles): bottleneck is
+  ``tree_neighbors_within_distance`` plus sklearn array validation — not forward
+  batching or backward pruning.
+- **Poisson ``poisson_standard``** (~77s at 30 shuffles): ``poisson_entropy`` /
+  scipy ``pmf`` dominate; ``poisson_conditional_mutual_information_batch`` is already cheap.
+
 ## [1.2.8] - 2026-06-25
 
 ### Changed
