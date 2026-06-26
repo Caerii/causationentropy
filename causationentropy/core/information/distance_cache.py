@@ -29,6 +29,8 @@ _detcorr_cache: Dict[str, float] = {}
 
 _corrcoef_cache: Dict[str, np.ndarray] = {}
 
+# Parallel shuffle tests (n_jobs > 1) share these dicts across threads; the lock
+# guards insert/evict/clear only — expensive tree/cdist/corrcoef work runs outside it.
 _cache_lock = threading.Lock()
 
 _distance_cache_size = 128
@@ -135,6 +137,7 @@ def cached_detcorr(A: np.ndarray) -> float:
     with _cache_lock:
         if key in _detcorr_cache:
             return _detcorr_cache[key]
+    # Compute outside the lock so other threads are not blocked on linear algebra.
     result = correlation_log_determinant(A)
     with _cache_lock:
         if key in _detcorr_cache:
@@ -243,6 +246,7 @@ def get_or_build_tree(data: np.ndarray, metric: str = "euclidean"):
         if key in _tree_cache:
             return _tree_cache[key]
 
+    # Build the spatial index once; a second thread may finish first (check below).
     _, n_features = data.shape
     if metric == "euclidean" and n_features <= 15:
         tree = KDTree(data, metric=metric)
@@ -270,6 +274,7 @@ def tree_knn_distances(
         return distances[:, :1], indices[:, :1]
     if distances.ndim == 1:
         return distances[None, 1:], indices[None, 1:]
+    # query returns the query point as its own neighbor at distance 0; drop column 0.
     return distances[:, 1:], indices[:, 1:]
 
 
@@ -290,7 +295,9 @@ def tree_neighbors_within_distance(
     if radii.shape[0] != data.shape[0]:
         raise ValueError("distances must have one threshold per sample row")
     tree = get_or_build_tree(data, metric=metric)
+    # r=radii: one radius per row (KSG ε from the joint X,Y,Z space differs per sample).
     counts = tree.query_radius(data, r=radii, count_only=True)
+    # query_radius counts the center point; KSG neighbor counts exclude self.
     return np.asarray(counts, dtype=np.float64) - 1.0
 
 

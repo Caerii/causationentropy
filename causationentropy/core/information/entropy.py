@@ -255,6 +255,8 @@ def _poisson_pmf_block(ks: np.ndarray, lambdas: np.ndarray) -> np.ndarray:
     ``lambdas[None, :]``).
     """
     ks = np.asarray(ks, dtype=int)
+    # ks[:, None] and lambdas[None, :] broadcast to a (len(ks), len(lambdas)) grid
+    # in one scipy call — the heart of the PMF batching speedup.
     return scipy.stats.poisson.pmf(ks[:, None], lambdas[None, :])
 
 
@@ -306,19 +308,25 @@ def poisson_entropy(lambdas):
     """
     lambdas = np.abs(np.asarray(lambdas, dtype=float))
     scalar_input = lambdas.ndim == 0
+    # poisson_joint_entropy passes a diagonal np.matrix; ravel preserves the legacy
+    # “entropy per entry, then sum” semantics without 2-D PMF blocks.
     lambdas = np.ravel(lambdas)
 
     p0 = np.exp(-lambdas)
     psum = p0.copy()
     parts = [p0.reshape(1, -1)]
+    # Tail-term guard: once k >= max(lambda), track the smallest PMF added; when it
+    # is negligible the infinite sum has effectively converged (Fish–Sun–Bollt rule).
     small = 1.0
     k = 1
     max_lam = float(np.max(lambdas)) if lambdas.size else 0.0
 
+    # Stop when cumulative mass is within 1e-16 of 1 OR the tail PMF is below 1e-75.
     while float(np.max(1.0 - psum)) > 1e-16 and small > 1e-75 and k <= 100_000:
         ks = np.arange(k, min(k + _POISSON_PMF_CHUNK, 100_001))
         block = _poisson_pmf_block(ks, lambdas)
         stop_at = block.shape[0]
+        # Walk rows inside the chunk so truncation can land mid-block (exact legacy stop).
         for i in range(block.shape[0]):
             k_curr = int(ks[i])
             psum = psum + block[i]
@@ -337,6 +345,7 @@ def poisson_entropy(lambdas):
     P = np.vstack(parts)
     with np.errstate(divide="ignore", invalid="ignore"):
         est_a = P * np.log(P)
+        # 0 * log(0) is treated as 0 so the truncated sum stays finite.
         est_a = np.where(P > 0, est_a, 0.0)
     if P.shape[0] == 1:
         est = -np.sum(est_a)

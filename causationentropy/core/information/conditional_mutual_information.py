@@ -431,6 +431,7 @@ def _poisson_conditional_cmi_from_correlation(
     SS = SXYZ.copy()
     Sa = SXYZ - np.diag(np.diag(SXYZ))
     np.fill_diagonal(SS, np.diagonal(SS) - np.diag(Sa))
+    # Move cross-block correlation mass onto X/X and Y/Y blocks (Fish–Sun–Bollt step).
     SS[np.ix_(ix, ix)] = SS[np.ix_(ix, ix)] + SXYZ[np.ix_(ix, iy)]
     SS[np.ix_(iy, iy)] = SS[np.ix_(iy, iy)] + SXYZ[np.ix_(iy, ix)]
 
@@ -440,6 +441,7 @@ def _poisson_conditional_cmi_from_correlation(
     s_est_xz = SS[np.ix_(xz_idx, xz_idx)]
     hyz = poisson_joint_entropy(s_est_yz)
     hz = poisson_joint_entropy(SS[np.ix_(iz, iz)])
+    # H(X,Y,Z) uses the original correlation matrix with diagonal mass removed (Sa).
     hxyz = poisson_joint_entropy(SXYZ - np.diag(Sa))
     hxz = poisson_joint_entropy(s_est_xz)
     h_yz = hyz - hz
@@ -475,8 +477,10 @@ def poisson_conditional_mutual_information_batch(X_candidates, Y, Z=None):
         iy_local = np.arange(1, 1 + ky)
         results = np.empty(n_cand)
         for j in range(n_cand):
+            # Column j is candidate X_j; Y columns follow all candidates in W.
             cols = np.concatenate(([j], np.arange(n_cand, n_cand + ky)))
             sub = SXY[np.ix_(cols, cols)]
+            # Indices 0 and 1..ky refer to rows within sub, not W.
             results[j] = _poisson_marginal_mi_from_correlation(
                 sub, np.array([0]), iy_local
             )
@@ -494,6 +498,8 @@ def poisson_conditional_mutual_information_batch(X_candidates, Y, Z=None):
 
     results = np.empty(n_cand)
     for j in range(n_cand):
+        # Principal submatrix for [X_j, Y, Z] — joint entropy must not include
+        # other candidates' cross-correlations (unlike a naive index into SXYZ).
         cols = np.concatenate(
             ([j], np.arange(n_cand, n_cand + ky), np.arange(n_cand + ky, n_cand + ky + kz))
         )

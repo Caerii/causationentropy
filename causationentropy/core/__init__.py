@@ -1,4 +1,4 @@
-__version__ = "1.2.11"
+__version__ = "1.2.12"
 from . import discovery, information, linalg, plotting, presets, stats
 from .discovery import discover_network
 from .information import distance_cache

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "causationentropy"
-version = "1.2.11"
+version = "1.2.12"
 authors = [
     {name = "Kevin Slote", email = "kslote1@gmail.com"},
 ]
