@@ -288,30 +288,39 @@ def poisson_entropy(lambdas):
            multivariate mutual information estimation and information flow with applications
            from gene expression data. (In preparation)
     """
-    lambdas = np.abs(lambdas)
-    First = np.exp(-lambdas)
-    Psum = First
-    P = [np.matrix(First)]
-    counter = 0
-    small = 1
-    i = 1
-    while np.max(1 - Psum) > 1e-16 and small > 1e-75:
-        counter = counter + 1
-        prob = scipy.stats.poisson.pmf(i, lambdas)
-        Psum = Psum + prob
-        P.append(np.matrix(prob))
-        if i >= np.max(lambdas):
-            small = np.min(prob)
+    lambdas = np.abs(np.asarray(lambdas, dtype=float))
+    scalar_input = lambdas.ndim == 0
+    lambdas = np.atleast_1d(lambdas)
 
-        i = i + 1
+    p0 = np.exp(-lambdas)
+    psum = p0.copy()
+    terms = [p0]
+    small = 1.0
+    k = 1
+    max_lam = float(np.max(lambdas)) if lambdas.size else 0.0
 
-    P = np.array(P).squeeze()
-    est_a = P * np.log(P)
-    try:
-        est = -np.sum(est_a, axis=0)
-    except:
+    while float(np.max(1.0 - psum)) > 1e-16 and small > 1e-75:
+        prob = scipy.stats.poisson.pmf(k, lambdas)
+        psum = psum + prob
+        terms.append(prob)
+        if k >= max_lam:
+            small = float(np.min(prob))
+        k += 1
+        if k > 100_000:
+            break
+
+    P = np.stack(terms, axis=0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        est_a = P * np.log(P)
+        est_a = np.where(P > 0, est_a, 0.0)
+    if P.shape[0] == 1:
         est = -np.sum(est_a)
-    return np.real(est)
+    else:
+        est = -np.sum(est_a, axis=0)
+    est = np.real(est)
+    if scalar_input:
+        return float(np.asarray(est).reshape(()))
+    return est
 
 
 def poisson_joint_entropy(Cov):

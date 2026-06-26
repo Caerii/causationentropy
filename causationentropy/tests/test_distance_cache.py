@@ -17,6 +17,7 @@ from causationentropy.core.information.distance_cache import (
     clear_caches,
     configure_cache_for_discovery,
     get_cache_stats,
+    tree_neighbors_within_distance,
 )
 from causationentropy.core.information.mutual_information import knn_mutual_information
 from causationentropy.datasets.synthetic import logisic_dynamics
@@ -99,6 +100,37 @@ def test_gaussian_cmi_batch_matches_serial():
         ]
     )
     np.testing.assert_allclose(batch_marginal, serial_marginal, rtol=1e-10, atol=1e-12)
+
+
+def test_tree_neighbors_within_distance_matches_dense():
+    """Batched tree neighbor counts must match dense cdist thresholding."""
+    rng = np.random.default_rng(6)
+    data = rng.normal(size=(40, 3))
+    js = rng.normal(size=(40, 2))
+    epsilon = np.sort(cached_cdist(js))[:, 3]
+
+    tree_counts = tree_neighbors_within_distance(data, epsilon, metric="euclidean")
+    dense = cached_cdist(data, metric="euclidean")
+    dense_counts = np.sum(dense < epsilon[:, None], axis=1) - 1
+
+    np.testing.assert_allclose(tree_counts, dense_counts, rtol=0, atol=0)
+
+
+def test_poisson_entropy_vectorized_regression():
+    """Vectorized poisson_entropy matches fixed reference nats (regression guard)."""
+    from causationentropy.core.information.entropy import poisson_entropy
+
+    refs = {
+        1.0: 1.3048422422562513,
+        2.0: 1.7048826439329838,
+        3.0: 1.9314701981485676,
+    }
+    for lam, expected in refs.items():
+        got = poisson_entropy(lam)
+        assert abs(got - expected) < 1e-10
+
+    batch = poisson_entropy(np.array([1.0, 2.0, 3.0]))
+    np.testing.assert_allclose(batch, [refs[1.0], refs[2.0], refs[3.0]], rtol=1e-10)
 
 
 def test_poisson_cmi_batch_matches_serial():

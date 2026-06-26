@@ -15,6 +15,7 @@ scales with one discovery job rather than growing without bound across sessions.
 from __future__ import annotations
 
 import hashlib
+import threading
 from typing import Any, Dict, Tuple
 
 import numpy as np
@@ -28,10 +29,23 @@ _detcorr_cache: Dict[str, float] = {}
 
 _corrcoef_cache: Dict[str, np.ndarray] = {}
 
+_cache_lock = threading.Lock()
+
 _distance_cache_size = 128
 _tree_cache_size = 100
 _detcorr_cache_size = 128
 _corrcoef_cache_size = 128
+
+
+def _evict_one(cache: Dict[str, Any]) -> None:
+    """Remove one arbitrary entry; safe when another thread already evicted."""
+    while cache:
+        key = next(iter(cache))
+        try:
+            del cache[key]
+            return
+        except KeyError:
+            continue
 
 
 def _array_hash(arr: np.ndarray, metric: str = "euclidean", extra: str = "") -> str:
@@ -48,10 +62,11 @@ def set_distance_cache_size(size: int) -> None:
 
 def clear_caches() -> None:
     """Clear all estimator caches."""
-    _distance_cache.clear()
-    _tree_cache.clear()
-    _detcorr_cache.clear()
-    _corrcoef_cache.clear()
+    with _cache_lock:
+        _distance_cache.clear()
+        _tree_cache.clear()
+        _detcorr_cache.clear()
+        _corrcoef_cache.clear()
 
 
 def get_cache_stats() -> Dict[str, int]:
@@ -117,13 +132,17 @@ def cached_detcorr(A: np.ndarray) -> float:
     if A.shape[1] == 0:
         return 0.0
     key = _array_hash(A, extra="detcorr")
-    if key in _detcorr_cache:
-        return _detcorr_cache[key]
+    with _cache_lock:
+        if key in _detcorr_cache:
+            return _detcorr_cache[key]
     result = correlation_log_determinant(A)
-    if len(_detcorr_cache) >= _detcorr_cache_size:
-        del _detcorr_cache[next(iter(_detcorr_cache))]
-    _detcorr_cache[key] = result
-    return result
+    with _cache_lock:
+        if key in _detcorr_cache:
+            return _detcorr_cache[key]
+        if len(_detcorr_cache) >= _detcorr_cache_size:
+            _evict_one(_detcorr_cache)
+        _detcorr_cache[key] = result
+        return result
 
 
 def _correlation_log_det_from_matrix(C: np.ndarray) -> float:
@@ -152,13 +171,17 @@ def cached_corrcoef(A: np.ndarray) -> np.ndarray:
     if A.shape[1] == 0:
         return np.zeros((0, 0))
     key = _array_hash(A, extra="corrcoef")
-    if key in _corrcoef_cache:
-        return _corrcoef_cache[key]
+    with _cache_lock:
+        if key in _corrcoef_cache:
+            return _corrcoef_cache[key]
     C = np.corrcoef(A.T)
-    if len(_corrcoef_cache) >= _corrcoef_cache_size:
-        del _corrcoef_cache[next(iter(_corrcoef_cache))]
-    _corrcoef_cache[key] = C
-    return C
+    with _cache_lock:
+        if key in _corrcoef_cache:
+            return _corrcoef_cache[key]
+        if len(_corrcoef_cache) >= _corrcoef_cache_size:
+            _evict_one(_corrcoef_cache)
+        _corrcoef_cache[key] = C
+        return C
 
 
 def correlation_log_det_subset(C: np.ndarray, indices: np.ndarray) -> float:
@@ -192,36 +215,46 @@ def cached_cdist(
     """Cached full pairwise distance matrix."""
     data = np.asarray(data)
     key = _array_hash(data, metric=metric, extra=str(p))
-    cached = _distance_cache.get(key)
-    if cached is not None and cached.shape[0] == data.shape[0]:
-        return cached
+    with _cache_lock:
+        cached = _distance_cache.get(key)
+        if cached is not None and cached.shape[0] == data.shape[0]:
+            return cached
     if metric == "minkowski":
         result = cdist(data, data, metric=metric, p=p)
     else:
         result = cdist(data, data, metric=metric)
-    if len(_distance_cache) >= _distance_cache_size:
-        del _distance_cache[next(iter(_distance_cache))]
-    _distance_cache[key] = result
-    return result
+    with _cache_lock:
+        cached = _distance_cache.get(key)
+        if cached is not None and cached.shape[0] == data.shape[0]:
+            return cached
+        if len(_distance_cache) >= _distance_cache_size:
+            _evict_one(_distance_cache)
+        _distance_cache[key] = result
+        return result
 
 
 def get_or_build_tree(data: np.ndarray, metric: str = "euclidean"):
     """Return a cached KDTree or BallTree for neighbor queries."""
     from sklearn.neighbors import BallTree, KDTree
 
-    data = np.asarray(data)
+    data = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     key = _array_hash(data, metric=metric, extra="tree")
-    if key in _tree_cache:
-        return _tree_cache[key]
+    with _cache_lock:
+        if key in _tree_cache:
+            return _tree_cache[key]
+
     _, n_features = data.shape
     if metric == "euclidean" and n_features <= 15:
         tree = KDTree(data, metric=metric)
     else:
         tree = BallTree(data, metric=metric)
-    if len(_tree_cache) >= _tree_cache_size:
-        del _tree_cache[next(iter(_tree_cache))]
-    _tree_cache[key] = tree
-    return tree
+    with _cache_lock:
+        if key in _tree_cache:
+            return _tree_cache[key]
+        if len(_tree_cache) >= _tree_cache_size:
+            _evict_one(_tree_cache)
+        _tree_cache[key] = tree
+        return tree
 
 
 def tree_knn_distances(
@@ -230,6 +263,7 @@ def tree_knn_distances(
     metric: str = "euclidean",
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return k-nearest-neighbor distances and indices (excluding self)."""
+    data = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
     tree = get_or_build_tree(data, metric=metric)
     distances, indices = tree.query(data, k=k + 1)
     if k == 0:
@@ -244,13 +278,20 @@ def tree_neighbors_within_distance(
     distances: np.ndarray,
     metric: str = "euclidean",
 ) -> np.ndarray:
-    """Count neighbors within per-point distance thresholds."""
+    """Count neighbors within per-point distance thresholds.
+
+    Uses a single batched ``query_radius`` call with per-sample radii instead of
+  one sklearn query per row. ``count_only=True`` avoids materializing neighbor
+    index lists. The tree is built from contiguous ``float64`` data so sklearn
+    validation overhead is paid once per cached block.
+    """
+    data = np.ascontiguousarray(np.asarray(data, dtype=np.float64))
+    radii = np.asarray(distances, dtype=np.float64).ravel()
+    if radii.shape[0] != data.shape[0]:
+        raise ValueError("distances must have one threshold per sample row")
     tree = get_or_build_tree(data, metric=metric)
-    counts = np.zeros(len(data))
-    for i, epsilon in enumerate(distances):
-        neighbors = tree.query_radius([data[i]], r=epsilon)[0]
-        counts[i] = len(neighbors) - 1
-    return counts
+    counts = tree.query_radius(data, r=radii, count_only=True)
+    return np.asarray(counts, dtype=np.float64) - 1.0
 
 
 def supports_kd_tree(metric: str) -> bool:

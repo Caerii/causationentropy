@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.2.10] - 2026-06-25
+
+### Changed
+
+- **k-NN neighbor counts** — ``tree_neighbors_within_distance`` uses one batched
+  ``query_radius(..., count_only=True)`` call with per-sample radii instead of
+  per-row sklearn queries (~19× faster on ``knn_standard`` profile tier).
+- **Estimator caches** — thread-safe LRU eviction for parallel ``n_jobs`` shuffle
+  tests (fixes ``KeyError`` under concurrent tree-cache access).
+- **`poisson_entropy`** — vectorized Poisson PMF accumulation (array ``stack``
+  instead of ``np.matrix`` list); ~2.5× faster on ``poisson_standard`` profile tier.
+
+### Added
+
+- **`test_tree_neighbors_within_distance_matches_dense`** — tree vs dense parity.
+- **Poisson entropy regression guard** in ``test_distance_cache``.
+
+### Notes (profile tier, ``n_jobs=1``, seed=42)
+
+- ``knn_standard``: wall ~247s → ~11s (``T=100``, 10 shuffles).
+- ``poisson_standard``: wall ~77s → ~30s (30 shuffles).
+- ``reproduction`` (Gaussian): unchanged (~2.2s).
+
 ## [1.2.9] - 2026-06-25
 
 ### Added
