@@ -2,14 +2,6 @@
 
 All notable changes to this project are documented in this file.
 
-## [1.2.12] - 2026-06-25
-
-### Changed
-
-- **Documentation pass** — inline comments on Poisson PMF batching, Poisson CMI
-  submatrix extraction, and k-NN/cache threading paths where behavior is
-  non-obvious from the code alone.
-
 ## [1.2.11] - 2026-06-25
 
 ### Changed
@@ -17,6 +9,8 @@ All notable changes to this project are documented in this file.
 - **`poisson_entropy`** — batch Poisson PMF evaluation in blocks of 512 orders per
   ``scipy.stats.poisson.pmf`` call (broadcast ``ks × lambdas``) instead of one
   scalar PMF call per truncation step.
+- Inline comments on Poisson PMF batching, Poisson CMI submatrix extraction, and
+  k-NN/cache threading paths (documentation only; no separate release).
 
 ### Added
 
